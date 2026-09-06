@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "explabs/gpt-6-astra",
+  "provider": {
+    "explabs": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Experiential Labs",
+      "options": {
+        "baseURL": "https://api.experientiallabs.ai/v1",
+        "apiKey": "{env:EXPLABS_API_KEY}"
+      },
+      "models": {
+        "explabs/gpt-6-astra": {
+          "name": "Astra "
+        }
+      }
+    }
+  }
+}

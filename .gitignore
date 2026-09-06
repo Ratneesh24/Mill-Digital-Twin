@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-ssr
+*.local
+.vite
+node_modules/.tmp
+.DS_Store
+*.log
+.claude/

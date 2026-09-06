@@ -1,0 +1,190 @@
+/**
+ * REVERSING ENGINE — §9 of the master spec.
+ *
+ * "Reversing sequence (no instant flip): speed ramps to zero -> all motion stops
+ *  -> direction flag changes -> entry/exit roles swap -> reel rotation directions
+ *  swap -> strip accelerates the other way -> direction indicator updates."
+ *
+ * This module owns that sequence and nothing else. It is a pure sequencer: it is
+ * told how much time has passed and what the mill is doing, and it reports which
+ * phase of the reversal is active. The simulation engine applies the phase; the
+ * state machine owns the status.
+ *
+ * Entry/exit are LOGICAL ROLES derived from direction (§1). The role mapping
+ * lives here, and it is the only place in the codebase that decides which
+ * physical reel is currently the payoff and which is the tension reel.
+ */
+
+import type { ReelRole, RollingDirection } from '../types/machine'
+
+export type ReversalPhase =
+  /** Not reversing. */
+  | 'NONE'
+  /** Mill has stopped; brakes settling, tension held. */
+  | 'SETTLE'
+  /** Direction flag flips and entry/exit roles swap. Instantaneous. */
+  | 'FLIP'
+  /** HAGC prepositions the gap for the next pass, reels take up new roles. */
+  | 'REPOSITION'
+  /** Sequence finished; the state machine may return to ROLLING. */
+  | 'COMPLETE'
+
+export interface ReversalTimings {
+  /** Dwell at standstill before the flag flips, s. */
+  settle: number
+  /** Time for the HAGC to preposition and the reels to take up roles, s. */
+  reposition: number
+}
+
+/**
+ * Reversal dwell times. These are SEQUENCE timings, not physics — they stand in
+ * for the real mill's brake settling, reel role handover and gap prepositioning.
+ * Documented as assumptions in docs/ASSUMPTIONS.md.
+ */
+export const REVERSAL_TIMINGS: ReversalTimings = {
+  settle: 1.6,
+  reposition: 2.2,
+}
+
+export interface ReversalState {
+  phase: ReversalPhase
+  /** Seconds spent in the current phase. */
+  elapsed: number
+  /** Direction the mill will roll in once the sequence completes. */
+  pendingDirection: RollingDirection | null
+}
+
+export const initialReversalState: ReversalState = {
+  phase: 'NONE',
+  elapsed: 0,
+  pendingDirection: null,
+}
+
+export function startReversal(
+  currentDirection: RollingDirection,
+  nextDirection?: RollingDirection,
+): ReversalState {
+  return {
+    phase: 'SETTLE',
+    elapsed: 0,
+    pendingDirection: nextDirection ?? oppositeDirection(currentDirection),
+  }
+}
+
+export function oppositeDirection(direction: RollingDirection): RollingDirection {
+  return direction === 'FORWARD' ? 'REVERSE' : 'FORWARD'
+}
+
+/**
+ * Advance the sequence.
+ *
+ * `speed` is passed in so the sequence physically cannot advance while the mill
+ * is still moving — the "no instant flip" rule is enforced here rather than
+ * trusted to the caller.
+ */
+export function stepReversal(
+  state: ReversalState,
+  dt: number,
+  speed: number,
+  timings: ReversalTimings = REVERSAL_TIMINGS,
+): ReversalState {
+  if (state.phase === 'NONE' || state.phase === 'COMPLETE') return state
+
+  // Hard guard: no phase of a reversal runs while the strip is moving.
+  if (Math.abs(speed) > 0.05) {
+    return { ...state, phase: 'SETTLE', elapsed: 0 }
+  }
+
+  const elapsed = state.elapsed + dt
+
+  switch (state.phase) {
+    case 'SETTLE':
+      if (elapsed >= timings.settle) {
+        return { ...state, phase: 'FLIP', elapsed: 0 }
+      }
+      return { ...state, elapsed }
+
+    case 'FLIP':
+      // FLIP is consumed by the simulation engine in a single tick — it applies
+      // the direction change and role swap, then the sequence moves on.
+      return { ...state, phase: 'REPOSITION', elapsed: 0 }
+
+    case 'REPOSITION':
+      if (elapsed >= timings.reposition) {
+        return { ...state, phase: 'COMPLETE', elapsed: 0 }
+      }
+      return { ...state, elapsed }
+
+    default:
+      return state
+  }
+}
+
+/** Progress through the whole sequence, 0..1 — drives the reversal indicator. */
+export function reversalProgress(
+  state: ReversalState,
+  timings: ReversalTimings = REVERSAL_TIMINGS,
+): number {
+  const total = timings.settle + timings.reposition
+  switch (state.phase) {
+    case 'NONE':
+      return 0
+    case 'SETTLE':
+      return Math.min(state.elapsed / total, 1)
+    case 'FLIP':
+      return timings.settle / total
+    case 'REPOSITION':
+      return Math.min((timings.settle + state.elapsed) / total, 1)
+    case 'COMPLETE':
+      return 1
+  }
+}
+
+// ---------------------------------------------------------------------------
+// LOGICAL ROLE DERIVATION — §1: "Entry/exit are logical roles derived from
+// direction, never hardcoded to left/right."
+// ---------------------------------------------------------------------------
+
+/**
+ * Which physical reel is upstream (paying off) for a given direction.
+ *
+ * Geometric convention used throughout the twin:
+ *   DTR sits on the -X side of the stand, ETR on the +X side.
+ *   FORWARD means the strip travels -X -> +X, so DTR pays off and ETR winds.
+ *   REVERSE means +X -> -X, so ETR pays off and DTR winds.
+ *
+ * Everything else — labels in the 3D scene, which reel's diameter grows, which
+ * tension is "entry" — is derived from this one function.
+ */
+export function payoffReel(direction: RollingDirection): 'DTR' | 'ETR' {
+  return direction === 'FORWARD' ? 'DTR' : 'ETR'
+}
+
+export function tensionReel(direction: RollingDirection): 'DTR' | 'ETR' {
+  return direction === 'FORWARD' ? 'ETR' : 'DTR'
+}
+
+export function reelRole(reel: 'DTR' | 'ETR', direction: RollingDirection): ReelRole {
+  if (payoffReel(direction) === reel) return 'PAYOFF'
+  if (tensionReel(direction) === reel) return 'TENSION'
+  return 'IDLE'
+}
+
+/**
+ * Sign of motion along the pass line for a direction.
+ * +1 = strip travels towards +X, -1 = towards -X. Used by every animated
+ * element in the scene so a direction change reverses all of them together.
+ */
+export function directionSign(direction: RollingDirection): 1 | -1 {
+  return direction === 'FORWARD' ? 1 : -1
+}
+
+/** Scene-space X position of the entry side for a direction. */
+export function entrySideX(direction: RollingDirection, distance: number): number {
+  return direction === 'FORWARD' ? -distance : distance
+}
+
+/** Scene-space X position of the exit side for a direction. */
+export function exitSideX(direction: RollingDirection, distance: number): number {
+  return direction === 'FORWARD' ? distance : -distance
+}

@@ -1,0 +1,43 @@
+{
+  "name": "crm04-4hi-reversing-mill-digital-twin",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Real-time digital twin of the CRM04/CRM06 4HI reversing cold rolling mill (Tata Steel CRM Sahibabad, Narrow Complex)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false --pretty",
+    "preview": "vite preview",
+    "lint": "tsc -b",
+    "validate": "tsx scripts/validate.ts",
+    "test": "npm run validate && npm run check:gateway && npm run check:store",
+    "check:gateway": "tsx scripts/checkGateway.ts",
+    "check:store": "tsx scripts/checkStore.ts",
+    "check:smoke": "tsx scripts/smoke.ts",
+    "check:physics": "tsx scripts/checkPhysics.ts"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.0.6",
+    "@react-three/fiber": "^9.1.0",
+    "framer-motion": "^12.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "recharts": "^2.15.1",
+    "three": "^0.175.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.17",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.4",
+    "@types/three": "^0.175.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "puppeteer-core": "^25.9.0",
+    "tailwindcss": "^4.0.17",
+    "tsx": "^4.23.13",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.3"
+  }
+}
