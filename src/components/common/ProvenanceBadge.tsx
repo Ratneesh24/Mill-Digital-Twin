@@ -41,7 +41,7 @@ export function ProvenanceBadge({ provenance, quality, note, className = '' }: P
   return (
     <span
       title={title}
-      className={`inline-flex items-center border px-1 text-[9px] leading-[14px] font-medium tracking-wider whitespace-nowrap ${
+      className={`inline-flex items-center border px-1 text-micro leading-[14px] font-medium tracking-wider whitespace-nowrap ${
         stale ? 'text-alarm border-alarm/60 bg-alarm/10' : STYLES[provenance]
       } ${className}`}
     >

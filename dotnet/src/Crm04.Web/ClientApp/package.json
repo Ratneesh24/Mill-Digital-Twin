@@ -1,0 +1,14 @@
+{
+  "name": "crm04-web-clientapp",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build-time only. Compiles the Tata Steel design system from the React app's index.css against the Razor components. Ships no JavaScript.",
+  "scripts": {
+    "build:css": "tailwindcss -i ../Styles/app.css -o ../wwwroot/css/app.css --minify",
+    "watch:css": "tailwindcss -i ../Styles/app.css -o ../wwwroot/css/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.0.17",
+    "tailwindcss": "^4.0.17"
+  }
+}

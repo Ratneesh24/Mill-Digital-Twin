@@ -14,8 +14,28 @@ import { millConfig } from '../src/config/millConfig'
 import { SimulationEngine, type RawFrame } from '../src/simulation/simulationEngine'
 import { calculateRollRPM, rollSurfaceSpeedFromStripSpeed } from '../src/simulation/rollingModel'
 import { reelRPM } from '../src/simulation/coilModel'
+import { payoffReel } from '../src/machine/reversingEngine'
+import { demoCoil, demoCoilLength, demoPassSchedule } from '../src/data/demoPassSchedule'
 
 const DT = 0.1
+
+/**
+ * Schedule facts the assertions below need. Derived, never retyped: a harness
+ * that hardcodes "five passes" or "0.9 mm" starts failing for the wrong reason
+ * the moment the schedule is retuned, which tells you nothing about the physics.
+ */
+const PASS_COUNT = demoPassSchedule.passes.length
+const FINAL_PASS = demoPassSchedule.passes[PASS_COUNT - 1]
+const FINAL_THICKNESS = FINAL_PASS.outputThickness
+/**
+ * Expected `COIL.LENGTH` during the last pass.
+ *
+ * That tag carries the length CHARGED INTO the current pass, so it is the length
+ * at the final pass's INPUT gauge, not at delivered gauge. Mass flow gives it
+ * directly: L = L_charged x h_charged / h_input.
+ */
+const FINAL_PASS_LENGTH =
+  (demoCoilLength * demoCoil.entryThickness) / FINAL_PASS.inputThickness
 
 let failures = 0
 let checks = 0
@@ -123,15 +143,22 @@ section('INVARIANTS at steady rolling (§18 coupling table)')
   const expectedEntry = (speed * num(f, 'ROLL.GAP.ACTUAL')) / num(f, 'STRIP.THICKNESS.ENTRY')
   check('Entry speed = v_exit · h_exit / h_entry', within(entrySpeed, expectedEntry, 1), `${entrySpeed.toFixed(1)} vs ${expectedEntry.toFixed(1)} m/min`)
 
-  const payoffRpm = Math.abs(num(f, 'DTR.RPM'))
-  const expectedPayoff = reelRPM(entrySpeed, num(f, 'DTR.DIAMETER') / 2)
-  check('Payoff reel rpm = v / 2πr', within(payoffRpm, expectedPayoff, 1), `${payoffRpm.toFixed(3)} vs ${expectedPayoff.toFixed(3)} rpm`)
+  // The payoff reel runs at ENTRY speed, so the reel this is asked of has to be
+  // the one currently paying off — not whichever reel happens to sit on the -X
+  // side of the stand.
+  const payoff = payoffReel(str(f, 'MILL.DIRECTION') as 'FORWARD' | 'REVERSE')
+  const payoffRpm = Math.abs(num(f, `${payoff}.RPM`))
+  const expectedPayoff = reelRPM(entrySpeed, num(f, `${payoff}.DIAMETER`) / 2)
+  check('Payoff reel rpm = v / 2πr', within(payoffRpm, expectedPayoff, 1), `${payoff}: ${payoffRpm.toFixed(3)} vs ${expectedPayoff.toFixed(3)} rpm`)
 
   const gaugemeter = num(f, 'ROLL.GAP.REF') + num(f, 'ROLL.FORCE.ACTUAL') / engineeringConfig.millModulus
   check('Gaugemeter h = S0 + F/M holds', Math.abs(gaugemeter - num(f, 'ROLL.GAP.ACTUAL')) * 1000 < 1, `residual ${(Math.abs(gaugemeter - num(f, 'ROLL.GAP.ACTUAL')) * 1000).toFixed(4)} µm`)
 
   check('Delivered thickness on schedule', Math.abs(num(f, 'STRIP.THICKNESS.DEVIATION')) < 25, `${num(f, 'STRIP.THICKNESS.DEVIATION').toFixed(2)} µm deviation`)
-  check('Force in a credible band', num(f, 'ROLL.FORCE.ACTUAL') > 200 && num(f, 'ROLL.FORCE.ACTUAL') < millConfig.ratings.maxRollingForce, `${num(f, 'ROLL.FORCE.ACTUAL').toFixed(0)} t of ${millConfig.ratings.maxRollingForce} t`)
+  // A band relative to the mill's own rating, so this still means "a plausible
+  // fraction of what this stand can do" after the rating changes.
+  const forceFloor = millConfig.ratings.maxRollingForce * 0.35
+  check('Force in a credible band', num(f, 'ROLL.FORCE.ACTUAL') > forceFloor && num(f, 'ROLL.FORCE.ACTUAL') < millConfig.ratings.maxRollingForce, `${num(f, 'ROLL.FORCE.ACTUAL').toFixed(0)} t, between ${forceFloor.toFixed(0)} t and the ${millConfig.ratings.maxRollingForce} t rating`)
 }
 
 // --- TEST 3: increase speed -------------------------------------------------
@@ -203,8 +230,10 @@ section('TEST 5 & 9 — Pass complete and reversal')
   check('Pass number incremented', num(flipped.frame, 'PASS.NUMBER') === startPass + 1, `${startPass} → ${num(flipped.frame, 'PASS.NUMBER')}`)
   check('Target thickness changed for the new pass', Math.abs(num(flipped.frame, 'STRIP.THICKNESS.REF') - num(start, 'STRIP.THICKNESS.REF')) > 1e-4, `${num(start, 'STRIP.THICKNESS.REF').toFixed(3)} → ${num(flipped.frame, 'STRIP.THICKNESS.REF').toFixed(3)} mm`)
 
-  const newDirection = str(flipped.frame, 'MILL.DIRECTION')
-  const expectedPayoff = newDirection === 'FORWARD' ? 'DTR' : 'ETR'
+  const newDirection = str(flipped.frame, 'MILL.DIRECTION') as 'FORWARD' | 'REVERSE'
+  // Asked of the same function the engine uses, so this assertion cannot drift
+  // away from the role mapping the way a second copy of the ternary would.
+  const expectedPayoff = payoffReel(newDirection)
   const payoffRole = str(flipped.frame, `${expectedPayoff}.ROLE`)
   check('Entry/exit roles swapped with direction', payoffRole === 'PAYOFF', `${newDirection}: ${expectedPayoff}.ROLE = ${payoffRole}`)
 
@@ -295,11 +324,13 @@ section('FULL SCHEDULE — five passes to final gauge')
     if (num(frame, 'PASS.NUMBER') >= num(frame, 'PASS.TOTAL') && num(frame, 'COIL.REMAINING_LENGTH') <= 1) break
   }
 
-  check('All five passes ran', seen.size === 5, `passes seen: ${[...seen].sort().join(', ')}`)
+  check(`All ${PASS_COUNT} passes ran`, seen.size === PASS_COUNT, `passes seen: ${[...seen].sort().join(', ')}`)
   check('Reached the final pass', num(frame, 'PASS.NUMBER') === num(frame, 'PASS.TOTAL'), `pass ${num(frame, 'PASS.NUMBER')} of ${num(frame, 'PASS.TOTAL')}`)
-  check('Final thickness reached', Math.abs(num(frame, 'ROLL.GAP.ACTUAL') - 0.9) < 0.02, `${num(frame, 'ROLL.GAP.ACTUAL').toFixed(4)} mm vs 0.900 target`)
+  check('Final thickness reached', Math.abs(num(frame, 'ROLL.GAP.ACTUAL') - FINAL_THICKNESS) < 0.02, `${num(frame, 'ROLL.GAP.ACTUAL').toFixed(4)} mm vs ${FINAL_THICKNESS.toFixed(3)} target`)
   check('Schedule completed in a credible time', elapsed < maxSeconds, `${(elapsed / 60).toFixed(1)} min of mill time`)
-  check('Coil length grew as it was rolled thinner', num(frame, 'COIL.LENGTH') > 1500, `${num(frame, 'COIL.LENGTH').toFixed(0)} m at final gauge`)
+  // Two-sided, because the interesting failure is the length drifting AWAY from
+  // mass flow in either direction, not just failing to grow.
+  check('Coil length tracks mass flow through the schedule', within(num(frame, 'COIL.LENGTH'), FINAL_PASS_LENGTH, 12), `${num(frame, 'COIL.LENGTH').toFixed(0)} m charged into the final pass vs ${FINAL_PASS_LENGTH.toFixed(0)} m from mass flow (${demoCoilLength.toFixed(0)} m at ${demoCoil.entryThickness} mm)`)
 }
 
 // ---------------------------------------------------------------------------

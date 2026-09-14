@@ -14,7 +14,7 @@
  *     contradicting its own thickness model.
  *
  *  2. Section is drawn with the disclosed exaggeration factor from millConfig.
- *     A 2 mm strip between 400 mm rolls is invisible at true scale. The NUMBERS
+ *     A 2 mm strip between 215 mm rolls is invisible at true scale. The NUMBERS
  *     shown anywhere in the app are always true; only these pixels are scaled,
  *     and the scene states the factor.
  */
@@ -23,7 +23,7 @@ import { useMemo, useRef } from 'react'
 import { CanvasTexture, RepeatWrapping, type Group, type Mesh, type MeshStandardMaterial } from 'three'
 import { mmToScene, stripThicknessToScene } from '../../config/unitConversion'
 import { useTwinFrame } from './TwinContext'
-import { MATERIALS, SCENE } from './twinMaterials'
+import { LINE, MATERIALS } from './twinMaterials'
 
 /** Spacing of the surface markers along the strip, metres of real strip. */
 const MARKER_SPACING_M = 0.5
@@ -70,7 +70,10 @@ function StripSpan({ sideX }: SpanProps) {
   const pivotRef = useRef<Group>(null)
   const meshRef = useRef<Mesh>(null)
   const texture = useStripTexture()
-  const spanLength = SCENE.reelX
+  // Each span runs from the bite to its own reel. The two are equal today, but
+  // the entry and delivery reels are separate stations on the line and nothing
+  // requires them to stay that way.
+  const spanLength = Math.abs(sideX === -1 ? LINE.etrX : LINE.dtrX)
 
   useTwinFrame((v) => {
     const pivot = pivotRef.current

@@ -1,0 +1,346 @@
+@page "/"
+@page "/dashboard"
+@*
+    MILL OVERVIEW.
+
+    Operating context, then the visual-executive hero, then the KPI ribbon, then the full
+    parameter set beside system status and alarms, then the pass schedule and coil.
+
+    ON THE REAL CRM04 FEED, the whole WORK ROLL group, all of HYDRAULIC, all of COOLING and most
+    of SYSTEM STATUS read NO TAG - the plant does not publish those values. Showing them greyed
+    and labelled IS the §7.4 contract: a plausible-looking number would be worse than nothing.
+
+    Deliberately NO canvas and NO chart on this page. The mill schematic is SVG and the KPI traces
+    are hand-drawn sparklines, which is what keeps the twin on its own route and the layout probe
+    passing. Port of src/components/pages/DashboardPage.tsx.
+*@
+@using Crm04.Domain.Configuration
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.Components.Dashboard
+@using Crm04.Web.Components.Panels
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject TagStore Tags
+@inject UiTickService Ticker
+@implements IDisposable
+
+<PageTitle>CRM04 &middot; Mill overview</PageTitle>
+
+<PassHistoryTracker />
+
+@if (Mill.ConnectionError is { } error)
+{
+    <div class="border-alarm/50 bg-alarm/10 text-alarm mt-3 rounded-[--radius-card] border px-4 py-3 text-meta font-semibold">
+        NO DATA &middot; @error
+    </div>
+}
+
+<OperatingContext />
+
+@* Visual-executive hero: state + live line schematic + drive load. *@
+<MillStatusHero />
+
+<div class="kpi-ribbon">
+    <KpiGroup Title="PRODUCT / THICKNESS" Accent="@Accent.Thickness" Icon="Ruler">
+        <KpiTile Label="EXIT THICKNESS" TagName="STRIP.THICKNESS" Decimals="3" Accent="@Accent.Thickness"
+                 SetpointTag="STRIP.THICKNESS.REF" DeviationTag="STRIP.THICKNESS.DEVIATION"
+                 DeviationDecimals="1" DeviationUnit="µm" Icon="Ruler" />
+        <KpiTile Label="ENTRY THICKNESS" TagName="STRIP.THICKNESS.ENTRY" Decimals="3" Accent="@Accent.Thickness" Icon="Ruler" />
+        <KpiTile Label="REDUCTION" TagName="STRIP.REDUCTION" Decimals="2" Accent="@Accent.Thickness" Icon="Layers" />
+        <KpiTile Label="STRIP WIDTH" TagName="STRIP.WIDTH" Decimals="0" Accent="@Accent.Thickness" Icon="Ruler" Spark="false" />
+    </KpiGroup>
+
+    <KpiGroup Title="ROLLING" Accent="@Accent.Rolling" Icon="ArrowDownWideNarrow">
+        <KpiTile Label="ROLL FORCE" TagName="ROLL.FORCE.ACTUAL" Decimals="0" Accent="@Accent.Rolling"
+                 SetpointTag="ROLL.FORCE.REF" Icon="ArrowDownWideNarrow"
+                 ProgressValue="ForcePct" ProgressTone="@ForceTone" RatingCaption="@ForceRating" />
+        <KpiTile Label="MILL SPEED" TagName="MILL.SPEED.ACTUAL" Decimals="0" Accent="@Accent.Rolling"
+                 SetpointTag="MILL.SPEED.REF" Icon="Gauge"
+                 ProgressValue="SpeedPct" RatingCaption="@SpeedRating" />
+        <KpiTile Label="ROLL GAP" TagName="ROLL.GAP.ACTUAL" Decimals="3" Accent="@Accent.Rolling"
+                 SetpointTag="ROLL.GAP.REF" Icon="Settings2" />
+        <KpiTile Label="WORK ROLL RPM" TagName="WR.TOP.RPM" Decimals="0" Accent="@Accent.Rolling" Icon="Gauge" />
+    </KpiGroup>
+
+    <KpiGroup Title="WORK ROLL &amp; SHAPE CONTROL" Accent="@Accent.WorkRoll" Icon="Settings2">
+        <KpiTile Label="WR BENDING (TOP)" TagName="WR.TOP.BENDING" Decimals="0" Accent="@Accent.WorkRoll" Icon="Settings2" />
+        <KpiTile Label="WR BENDING (BOTTOM)" TagName="WR.BOTTOM.BENDING" Decimals="0" Accent="@Accent.WorkRoll" Icon="Settings2" />
+        <KpiTile Label="DRF SETPOINT" TagName="ROLL.FORCE.DIFF_REF" Decimals="1" Accent="@Accent.WorkRoll"
+                 Icon="ArrowDownWideNarrow" Spark="false" />
+        <KpiTile Label="TILTING (OS−DS)" TagName="ROLL.GAP.TILT" Decimals="1" Accent="@Accent.WorkRoll"
+                 Signed="true" Icon="Settings2" />
+    </KpiGroup>
+
+    <KpiGroup Title="TENSION" Accent="@Accent.Tension" Icon="UnfoldVertical">
+        <KpiTile Label="ENTRY TENSION" TagName="TENSION.ENTRY" Decimals="1" Accent="@Accent.Tension"
+                 SetpointTag="TENSION.ENTRY.REF" Icon="UnfoldVertical"
+                 ProgressValue="EntryTensionPct" RatingCaption="@TensionRating" />
+        <KpiTile Label="EXIT TENSION" TagName="TENSION.EXIT" Decimals="1" Accent="@Accent.Tension"
+                 SetpointTag="TENSION.EXIT.REF" Icon="UnfoldVertical"
+                 ProgressValue="ExitTensionPct" RatingCaption="@TensionRating" />
+    </KpiGroup>
+
+    <KpiGroup Title="DRIVE" Accent="@Accent.Drive" Icon="Zap">
+        <KpiTile Label="DRIVE TORQUE" TagName="DRIVE.TORQUE" Decimals="1" Accent="@Accent.Drive" Icon="Zap"
+                 ProgressValue="TorquePct" ProgressTone="@TorqueTone" RatingCaption="@TorqueRating" />
+        <KpiTile Label="DRIVE CURRENT" TagName="DRIVE.CURRENT" Decimals="0" Accent="@Accent.Drive" Icon="Zap"
+                 ProgressValue="CurrentPct" RatingCaption="@CurrentRating" />
+        <KpiTile Label="DRIVE RPM" TagName="DRIVE.RPM" Decimals="0" Accent="@Accent.Drive" Icon="Gauge" />
+
+        @* Motor load is a DERIVED percentage, not a tag - so it gets the dim treatment and no
+           provenance badge. Bar shows the same percentage against the torque rating. *@
+        <KpiSlot Label="MOTOR LOAD" Accent="@Accent.Drive">
+            <div class="mt-1">
+                <span class="num text-text text-value-lg font-semibold tracking-tight">@JsNumber.ToFixed(Load, 1)</span>
+                <span class="text-text-faint text-micro ml-1">%</span>
+            </div>
+            <div class="mt-2">
+                <Progress Value="Load" Tone="@LoadBar" AriaLabel="Motor load" />
+            </div>
+            <div class="mt-2">
+                <span class="status-pill @LoadPill">
+                    <span aria-hidden="true" class="dot-glow h-1.5 w-1.5 shrink-0 rounded-full @LoadDot"></span>
+                    @LoadWord
+                </span>
+            </div>
+            <div class="text-text-faint text-micro mt-1.5">
+                OF @JsNumber.ToJsString(MillConfig.Default.Ratings.MainDriveRatedTorque) kNm RATING
+            </div>
+        </KpiSlot>
+    </KpiGroup>
+
+    <KpiGroup Title="ENERGY" Accent="@Accent.Energy" Icon="Flame">
+        <KpiTile Label="CURRENT POWER" TagName="DRIVE.POWER" Decimals="0" Accent="@Accent.Energy" Icon="Zap"
+                 ProgressValue="PowerPct" RatingCaption="@PowerRating" />
+
+        @* Specific energy is honestly derivable from power and throughput. The CUMULATIVE figures
+           are not: integrating power in a browser would only measure how long this tab has been
+           open, which is not what "today's energy" means. Those stay NO TAG until the historian
+           supplies them. *@
+        <KpiSlot Label="SPECIFIC ENERGY" Accent="@Accent.Energy">
+            <div class="mt-1">
+                @if (SpecificEnergy is { } se)
+                {
+                    <span class="num text-text text-value-lg font-semibold tracking-tight">@JsNumber.ToFixed(se, 1)</span>
+                }
+                else
+                {
+                    <span class="num text-text-faint text-value-lg">&mdash;</span>
+                }
+                <span class="text-text-faint text-micro ml-1">kWh/t</span>
+            </div>
+            <div class="text-text-faint text-micro mt-1.5">
+                @(SpecificEnergy is null ? "MILL AT STANDSTILL" : $"{JsNumber.ToFixed(Tph, 1)} t/h THROUGHPUT")
+            </div>
+            <div class="text-text-faint text-micro mt-2">DERIVED</div>
+        </KpiSlot>
+
+        <KpiTile Label="COIL ENERGY" TagName="MILL.ENERGY.COIL" Decimals="1" Accent="@Accent.Energy" Spark="false" />
+        <KpiTile Label="ENERGY TODAY" TagName="MILL.ENERGY.TODAY" Decimals="0" Accent="@Accent.Energy" Spark="false" />
+    </KpiGroup>
+</div>
+
+<div class="dashboard-main grid min-h-0">
+    <div class="param-grid grid min-h-0 content-start">
+        <ParameterGroup Title="ROLLING" Accent="@Accent.Rolling" Icon="ArrowDownWideNarrow" Rows="@RollingRows" />
+        <ParameterGroup Title="WORK ROLL CONTROL" Accent="@Accent.WorkRoll" Icon="Settings2" Rows="@WorkRollRows" />
+        <ParameterGroup Title="THICKNESS CONTROL" Accent="@Accent.Thickness" Icon="Ruler" Rows="@ThicknessRows" />
+        <ParameterGroup Title="TENSION" Accent="@Accent.Tension" Icon="UnfoldVertical" Rows="@TensionRows" />
+
+        <ParameterGroup Title="DRIVE" Accent="@Accent.Drive" Icon="Zap" Rows="@DriveRows">
+            <Footer>
+                <p class="text-text-faint text-micro border-line mt-2 border-t pt-2 leading-snug">
+                    Rated @JsNumber.ToJsString(MillConfig.Default.Ratings.MainDriveRating) kW &middot;
+                    @JsNumber.ToJsString(MillConfig.Default.Ratings.MainDriveRatedTorque) kNm &middot;
+                    @JsNumber.ToJsString(EngineeringConfig.MotorLimits.CurrentMax) A
+                </p>
+            </Footer>
+        </ParameterGroup>
+
+        <ParameterGroup Title="HYDRAULIC" Accent="@Accent.Hydraulic" Icon="Droplets" Rows="@HydraulicRows" />
+
+        <ParameterGroup Title="COOLING" Accent="@Accent.Coil" Icon="Snowflake" Rows="@CoolingRows">
+            <Footer>
+                <p class="text-text-faint text-micro border-line mt-2 border-t pt-2 leading-snug">
+                    Design flow @JsNumber.ToJsString(MillConfig.Default.Ratings.CoolantFlowLpm) LPM. The extract
+                    carries a coolant health word only &mdash; no instrumented values.
+                </p>
+            </Footer>
+        </ParameterGroup>
+
+        <ParameterGroup Title="LUBRICATION" Accent="@Accent.Energy" Icon="Droplets" Rows="@LubricationRows" />
+    </div>
+
+    @* Alarms sit directly under system status: an operator who sees a red row wants the alarm
+       text without moving their eyes elsewhere. *@
+    <div class="grid min-h-0 min-w-0 content-start gap-[14px]">
+        <SystemStatusBoard />
+        <AlarmPanel />
+    </div>
+</div>
+
+<div class="dashboard-lower grid">
+    <PassSchedulePanel />
+    <CoilDetails />
+</div>
+
+@code {
+    /// <summary>
+    /// Group accents. WAYFINDING ONLY - they say which group you are in, never how healthy it is.
+    /// Status stays the most saturated thing on the screen and is always paired with a word.
+    /// </summary>
+    private static class Accent
+    {
+        public const string Thickness = "var(--accent-thickness)";
+        public const string Rolling = "var(--accent-rolling)";
+        public const string WorkRoll = "var(--accent-workroll)";
+        public const string Tension = "var(--accent-tension)";
+        public const string Drive = "var(--accent-drive)";
+        public const string Hydraulic = "var(--accent-hydraulic)";
+        public const string Energy = "var(--accent-energy)";
+        public const string Coil = "var(--accent-coil)";
+    }
+
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        // The page itself repaints only on structured-state changes. Every process value on it
+        // lives inside a ValueReadout or Sparkline, which gate their own rendering per tag.
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private double Load => Mill.Summary?.TorquePercentage ?? 0d;
+    private double Tph => Mill.Summary?.ThroughputTph ?? 0d;
+    private double? SpecificEnergy => Mill.Summary?.SpecificEnergyKwhT;
+
+    private static double Pct(double? value, double max) =>
+        value is { } v && double.IsFinite(v) && max > 0 ? Math.Clamp(v / max * 100d, 0d, 100d) : 0d;
+
+    private double TagNum(string tag) => Tags.Get(tag).Number ?? 0d;
+
+    private double ForcePct => Mill.Summary?.ForcePercentage ?? Pct(TagNum("ROLL.FORCE.ACTUAL"), MillConfig.Default.Ratings.MaxRollingForce);
+    private string ForceTone => ForcePct >= 92d ? "bg-trip" : ForcePct >= 80d ? "bg-warning" : "bg-normal";
+    private string ForceRating => $"{JsNumber.ToJsString(MillConfig.Default.Ratings.MaxRollingForce)} t RATING";
+
+    private double SpeedPct => Pct(TagNum("MILL.SPEED.ACTUAL"), MillConfig.Default.Ratings.MaxMillSpeed);
+    private string SpeedRating => $"{JsNumber.ToJsString(MillConfig.Default.Ratings.MaxMillSpeed)} m/min MAX";
+
+    private double TorquePct => Load;
+    private string TorqueTone => Load >= 100d ? "bg-trip" : Load >= 80d ? "bg-warning" : "bg-normal";
+    private string TorqueRating => $"{JsNumber.ToJsString(MillConfig.Default.Ratings.MainDriveRatedTorque)} kNm RATING";
+    private string LoadBar => TorqueTone;
+
+    private double CurrentPct => Pct(TagNum("DRIVE.CURRENT"), EngineeringConfig.MotorLimits.CurrentMax);
+    private string CurrentRating => $"{JsNumber.ToJsString(EngineeringConfig.MotorLimits.CurrentMax)} A MAX";
+
+    private double PowerPct => Pct(TagNum("DRIVE.POWER"), MillConfig.Default.Ratings.MainDriveRating);
+    private string PowerRating => $"{JsNumber.ToJsString(MillConfig.Default.Ratings.MainDriveRating)} kW RATING";
+
+    private double EntryTensionPct => Pct(TagNum("TENSION.ENTRY"), EngineeringConfig.TensionLimits.EntryMax);
+    private double ExitTensionPct => Pct(TagNum("TENSION.EXIT"), EngineeringConfig.TensionLimits.ExitMax);
+    private string TensionRating => $"{JsNumber.ToFixed(EngineeringConfig.TensionLimits.ExitMax, 0)} kN MAX";
+
+    private string LoadWord => Load >= 100d ? "OVERLOAD" : Load >= 80d ? "WARNING" : "NORMAL";
+
+    private string LoadPill => Load >= 100d
+        ? "status-pill-trip text-trip"
+        : Load >= 80d ? "status-pill-warning text-warning" : "status-pill-normal text-healthy";
+
+    private string LoadDot => Load >= 100d ? "bg-alarm" : Load >= 80d ? "bg-warning" : "bg-healthy";
+
+    /* ------------------------------------------------------------- parameter rows */
+
+    private static readonly ParameterGroup.Row[] RollingRows =
+    [
+        new("Roll force", "ROLL.FORCE.ACTUAL", 0),
+        new("Roll force setpoint", "ROLL.FORCE.REF", 0),
+        new("Roll gap", "ROLL.GAP.ACTUAL", 3),
+        new("Gap setpoint S0", "ROLL.GAP.REF", 3),
+        new("Mill speed", "MILL.SPEED.ACTUAL", 0),
+        new("Speed setpoint", "MILL.SPEED.REF", 0),
+        new("Entry speed", "MILL.SPEED.ENTRY", 0),
+        new("Reduction", "STRIP.REDUCTION", 2),
+        new("Work roll RPM (top)", "WR.TOP.RPM", 0),
+        new("Backup roll RPM (top)", "BUR.TOP.RPM", 0),
+    ];
+
+    private static readonly ParameterGroup.Row[] WorkRollRows =
+    [
+        new("WR bending (top)", "WR.TOP.BENDING", 0),
+        new("WR bending (bottom)", "WR.BOTTOM.BENDING", 0),
+        new("DRF setpoint", "ROLL.FORCE.DIFF_REF", 1),
+        new("Roll force OS", "ROLL.FORCE.OS", 0),
+        new("Roll force DS", "ROLL.FORCE.DS", 0),
+        new("Tilting (OS−DS)", "ROLL.GAP.TILT", 1, Signed: true),
+        new("Roll gap OS", "ROLL.GAP.OS", 3),
+        new("Roll gap DS", "ROLL.GAP.DS", 3),
+    ];
+
+    private static readonly ParameterGroup.Row[] ThicknessRows =
+    [
+        new("Entry thickness", "STRIP.THICKNESS.ENTRY", 3),
+        new("Exit thickness", "STRIP.THICKNESS", 3),
+        new("Target thickness", "STRIP.THICKNESS.REF", 3),
+        new("Thickness deviation", "STRIP.THICKNESS.DEVIATION", 1, Signed: true),
+        new("DTR gauge", "GAUGE.DTR.THICKNESS", 3),
+        new("ETR gauge", "GAUGE.ETR.THICKNESS", 3),
+        new("AGC error", "AGC.ERROR", 1),
+        new("AGC output", "AGC.OUTPUT", 3),
+        new("Gap correction", "AGC.GAP.CORRECTION", 3),
+        new("Mass flow closure", "MILL.MASSFLOW.ERROR", 2, Signed: true),
+    ];
+
+    private static readonly ParameterGroup.Row[] TensionRows =
+    [
+        new("Entry tension", "TENSION.ENTRY", 1),
+        new("Entry setpoint", "TENSION.ENTRY.REF", 1),
+        new("Exit tension", "TENSION.EXIT", 1),
+        new("Exit setpoint", "TENSION.EXIT.REF", 1),
+        new("DTR tension", "DTR.TENSION", 1),
+        new("ETR tension", "ETR.TENSION", 1),
+        new("POR tension", "POR.TENSION", 1),
+    ];
+
+    private static readonly ParameterGroup.Row[] DriveRows =
+    [
+        new("Torque", "DRIVE.TORQUE", 1),
+        new("Current", "DRIVE.CURRENT", 0),
+        new("Power", "DRIVE.POWER", 0),
+        new("RPM", "DRIVE.RPM", 0),
+    ];
+
+    private static readonly ParameterGroup.Row[] HydraulicRows =
+    [
+        new("Loading pressure", "HYD.LOADING.PRESSURE", 0),
+        new("Bending pressure", "HYD.BENDING.PRESSURE", 0),
+        new("Capsule position", "HYD.GAP.POSITION", 3),
+        new("LP system pressure", "LP.PRESSURE", 1),
+        new("Hydraulic flow", "HYD.FLOW", 0),
+        new("Oil temperature", "HYD.TEMPERATURE", 1),
+    ];
+
+    private static readonly ParameterGroup.Row[] CoolingRows =
+    [
+        new("Coolant temperature", "COOLANT.TEMPERATURE", 1),
+        new("Coolant flow", "COOLANT.FLOW", 0),
+        new("Coolant pressure", "COOLANT.PRESSURE", 1),
+        new("Tank level", "COOLANT.TANK.LEVEL", 0),
+    ];
+
+    private static readonly ParameterGroup.Row[] LubricationRows =
+    [
+        new("LP system pressure", "LP.PRESSURE", 1),
+        new("Lube flow", "LUBRICATION.FLOW", 0),
+        new("Lube temperature", "LUBRICATION.TEMPERATURE", 1),
+    ];
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

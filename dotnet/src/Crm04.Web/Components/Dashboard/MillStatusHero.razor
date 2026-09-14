@@ -1,0 +1,230 @@
+@*
+    MILL STATUS HERO - the visual-executive strip above the KPI ribbon.
+
+    Three cards:
+      1. Mill state (status word + direction + pass progress + running TPH)
+      2. Animated mill-line schematic (SVG, no canvas and no chart library)
+      3. Drive load donut + power + specific energy + rolling time
+
+    Tag values still come from ValueReadout, so NO TAG honesty is preserved - this strip changes
+    HIERARCHY, never data. Port of src/components/dashboard/MillStatusHero.tsx.
+*@
+@using Crm04.Domain.Configuration
+@using Crm04.Domain.Machine
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject TagStore Tags
+@inject UiTickService Ticker
+@implements IDisposable
+
+<section aria-label="Mill status overview" class="hero-grid">
+
+    @* 1 - state *@
+    @* A flex column from 1280px up so the content can be DISTRIBUTED down the card rather than
+       pooling at the top. This card carries the least content of the three but is stretched to
+       the height of the schematic beside it; left top-aligned, that surplus collects underneath
+       as one conspicuous void. Label pinned top, readings centred, coil id at the bottom edge. *@
+    <div class="hero-card border-line bg-base-900 border xl:flex xl:flex-col" style="--hero-accent:@Accent">
+        <div class="hero-state-glow" aria-hidden="true"></div>
+        <p class="label">Mill state &middot; Pass @Pass.current/@Pass.total</p>
+
+        @* TWO COLUMNS FROM 1280px UP — the exact width at which `.hero-grid` becomes three
+           columns. Below that the band is already a single full-width column and this stacks
+           as it always did. Same four blocks, same data: side by side they stop forcing the
+           card into a tall narrow ladder, which is what left it 62% empty once the schematic
+           stretched it. *@
+        <div class="mt-1 grid gap-x-5 gap-y-3 xl:flex-1 xl:grid-cols-2 xl:content-center xl:items-start">
+            <div class="min-w-0">
+                <p class="num text-value-lg font-semibold tracking-tight @StateTone">@StatusLabel</p>
+
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-micro font-bold tracking-wider @DirectionPill">
+                        <Icon Name="@(Forward ? "ArrowRight" : "ArrowLeft")" Size="13" />
+                        @Direction
+                    </span>
+                    <span class="text-text-dim text-micro num inline-flex items-center gap-1">
+                        <Icon Name="Gauge" Size="13" />
+                        @JsNumber.ToFixed(Speed, 0) m/min
+                    </span>
+                </div>
+            </div>
+
+            <div class="min-w-0">
+                <div class="mb-1.5 flex items-center justify-between">
+                    <span class="label">Pass progress</span>
+                    <span class="num text-text-dim text-micro">@JsNumber.ToFixed(PassPct, 0)%</span>
+                </div>
+                <Progress Value="PassPct" AriaLabel="@($"Pass {Pass.current} of {Pass.total}")" />
+
+                @* Throughput is DERIVED from speed and section, not measured. The title says so, and it
+                   is rendered without a provenance badge because it is not a tag at all. *@
+                <div class="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2.5"
+                     title="Derived throughput from strip speed and section — not a measured tag">
+                    <span class="label inline-flex items-center gap-1.5">
+                        <span aria-hidden="true" class="bg-brand/12 text-brand grid h-6 w-6 place-items-center rounded-lg">
+                            <Icon Name="Box" Size="13" />
+                        </span>
+                        Running TPH
+                    </span>
+                    <span class="num text-text text-value font-semibold">
+                        @JsNumber.ToFixed(Tph, 1) <span class="text-text-faint text-micro font-normal">t/h</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-text-faint text-micro mt-2.5 truncate">
+            @MillConfig.Default.Identity.Mill &middot; Coil @CoilId
+        </p>
+    </div>
+
+    @* 2 - schematic *@
+    <div class="hero-card border-line bg-base-900 border">
+        <div class="mb-1 flex items-center justify-between gap-2">
+            <p class="label">4HI reversing line &middot; live</p>
+            <span class="text-text-faint text-micro num hidden sm:inline">
+                GAP <ValueReadout TagName="ROLL.GAP.ACTUAL" Size="sm" Decimals="3" HideBadge="true" HideUnit="true" />
+                mm &middot;
+                FORCE <ValueReadout TagName="ROLL.FORCE.ACTUAL" Size="sm" Decimals="0" HideBadge="true" HideUnit="true" />
+                kN
+            </span>
+        </div>
+        <MillLineSchematic />
+    </div>
+
+    @* 3 - load + energy *@
+    <div class="hero-card border-line bg-base-900 flex items-center gap-4 border" style="--hero-accent:@LoadTone">
+        <DonutGauge Value="Load" Tone="@LoadTone" AriaLabel="@($"Motor load {JsNumber.ToFixed(Load, 1)} percent")">
+            <div class="text-center leading-none">
+                <div class="num text-text text-value font-bold">@JsNumber.ToFixed(LoadDisplay, 0)</div>
+                <div class="text-text-faint text-micro">%</div>
+            </div>
+        </DonutGauge>
+
+        <div class="min-w-0 flex-1">
+            <p class="label">Motor load &middot; of @JsNumber.ToJsString(MillConfig.Default.Ratings.MainDriveRatedTorque) kNm</p>
+            <p class="text-micro mt-1 font-bold tracking-wider @LoadWordTone">@LoadWord</p>
+
+            @* Power and kWh/t pair up; rolling time spans beneath them. THREE ACROSS WAS TRIED
+               AND REJECTED: the donut takes its share first, leaving this grid only ~330px, and
+               "Rolling time · Today" then wrapped to three lines in a 97px column. It saved ~50px
+               of height and cost more than that in legibility. This card centres its content
+               vertically, so the height reads as balance rather than as a gap.
+
+               The icon chip that used to sit beside the rolling-time label is gone on purpose:
+               the other two stats label themselves with a plain inline icon, so this now matches
+               them instead of being a one-off. Data, tags and badges are untouched. *@
+            <div class="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-2.5">
+                <div class="min-w-0">
+                    <p class="label flex items-center gap-1"><Icon Name="Zap" Size="11" /> Power</p>
+                    <ValueReadout TagName="DRIVE.POWER" Size="md" Decimals="0" HideBadge="true" />
+                </div>
+                <div class="min-w-0">
+                    <p class="label flex items-center gap-1"><Icon Name="Flame" Size="11" /> kWh/t</p>
+                    <p class="num text-text text-value font-semibold">
+                        @(SpecificEnergy is { } se ? JsNumber.ToFixed(se, 1) : "—")
+                    </p>
+                    @if (SpecificEnergy is null)
+                    {
+                        <p class="text-text-faint text-micro">MILL AT STANDSTILL</p>
+                    }
+                </div>
+
+                @* ROLLING TIME - TODAY. A day total the historian owns; a browser that was not running
+                   all day cannot reconstruct it, so with no tag this reads NO TAG rather than counting
+                   from when the page opened (§7.4). *@
+                <div class="col-span-2 min-w-0"
+                     title="Mill rolling time since 00:00 — historian feed">
+                    <p class="label flex items-center gap-1">
+                        <Icon Name="Activity" Size="11" /> Rolling time &middot; Today
+                    </p>
+                    @if (RollingSeconds is { } secs)
+                    {
+                        <span class="inline-flex items-baseline gap-1.5">
+                            <span class="num text-text text-value font-semibold tracking-tight">
+                                @RollingEngine.FormatHms(secs)
+                            </span>
+                            <ProvenanceBadge Provenance="RollingTag.Provenance" Quality="RollingTag.Quality"
+                                             Note="@RollingTag.LiveNote" />
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="inline-flex items-baseline gap-1.5">
+                            <span class="num text-value text-text-faint tracking-tight">&mdash;</span>
+                            <ProvenanceBadge Provenance="Provenance.Unavailable"
+                                             Note="@(RollingTag.LiveNote ?? "Tag not available on the active feed")" />
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+@code {
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        // Reads several values, so it gates on the global version rather than one tag's.
+        if (Tags.GlobalVersion == _seen) return false;
+        _seen = Tags.GlobalVersion;
+        return true;
+    }
+
+    private MachineStatus Status => Mill.Summary?.MachineStatus ?? MachineStatus.Idle;
+    private string StatusLabel => MachineStatusRules.Label(Status);
+    private bool Forward => (Mill.Summary?.Direction ?? RollingDirection.Forward) == RollingDirection.Forward;
+    private string Direction => Mill.Summary?.Direction.ToWire() ?? "FORWARD";
+    private (int current, int total) Pass => (Mill.Summary?.PassCurrent ?? 0, Mill.Summary?.PassTotal ?? 0);
+    private double PassPct => Pass.total > 0 ? (double)Pass.current / Pass.total * 100d : 0d;
+    private string CoilId => Mill.Summary?.CoilId ?? "—";
+    private double Speed => Tags.Get("MILL.SPEED.ACTUAL").Number ?? 0d;
+    private double Load => Mill.Summary?.TorquePercentage ?? 0d;
+    private double Tph => Mill.Summary?.ThroughputTph ?? 0d;
+    private double? SpecificEnergy => Mill.Summary?.SpecificEnergyKwhT;
+
+    private UiTag RollingTag => Tags.Get("MILL.TIME.ROLLING.DAY");
+    private double? RollingSeconds => RollingTag.Number;
+
+    /// <summary>Torque noise at standstill formats as "-0"; clamp visual zero.</summary>
+    private double LoadDisplay => Math.Abs(Load) < 0.5d ? 0d : Load;
+
+    private string Accent => Status switch
+    {
+        MachineStatus.Rolling => "var(--color-healthy)",
+        MachineStatus.FastStop or MachineStatus.Fault => "var(--color-trip)",
+        MachineStatus.Reversing or MachineStatus.Decelerating => "var(--color-warning)",
+        _ => "var(--color-brand)",
+    };
+
+    private string StateTone => Status switch
+    {
+        MachineStatus.Rolling => "text-healthy",
+        MachineStatus.FastStop or MachineStatus.Fault => "text-trip alarm-pulse",
+        MachineStatus.Reversing or MachineStatus.Decelerating => "text-warning",
+        _ => "text-text",
+    };
+
+    private string DirectionPill => Forward
+        ? "border-normal/40 bg-normal/10 text-normal"
+        : "border-prov-simulated/40 bg-prov-simulated/10 text-prov-simulated";
+
+    private string LoadTone => Load >= 100d
+        ? "var(--color-trip)"
+        : Load >= 80d ? "var(--color-warning)" : "var(--color-healthy)";
+
+    private string LoadWord => Load >= 100d ? "OVERLOAD" : Load >= 80d ? "HIGH LOAD" : "NORMAL";
+
+    private string LoadWordTone => Load >= 100d ? "text-trip" : Load >= 80d ? "text-warning" : "text-healthy";
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

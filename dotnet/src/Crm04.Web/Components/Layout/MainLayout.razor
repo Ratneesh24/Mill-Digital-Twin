@@ -1,0 +1,78 @@
+@*
+    WORKSPACE LAYOUT - the shell every page renders inside.
+
+      +--------------------------------------------------------------+
+      | HEADER (sticky command bar + MODEL / DATA + 3-page nav)       |
+      +--------------------------------------------------------------+
+      | @Body - Dashboard | Trends | 3D twin                          |
+      +--------------------------------------------------------------+
+
+    Port of src/components/dashboard/WorkspaceLayout.tsx, class names preserved exactly - that is
+    what makes the Tata Steel design system in app.css apply unchanged. (The React app is frozen;
+    Blazor is the delivered UI. The page-title row was removed as duplication - the operating
+    context below each page already carries coil, pass, direction and state.)
+
+    Port of src/components/dashboard/WorkspaceLayout.tsx, class names preserved exactly - that is
+    what makes the Tata Steel design system in app.css apply unchanged.
+
+    ONE LAYOUT CONTRACT THIS MUST NOT BREAK: the routed page stays a DIRECT CHILD of
+    `.dashboard-content`. The responsive rules in the stylesheet collapse the page grids to one
+    column below 1280px by direct-child selector, and an extra wrapper div silently kills that.
+*@
+@inherits LayoutComponentBase
+@using Crm04.Web.Components.Dashboard
+@using Crm04.Web.State
+@inject UiStore Ui
+@implements IDisposable
+
+@* The palette lives on :root and the stylesheet remaps every surface under `.dark`, so the whole
+   theme is one class. It goes on the shell rather than <html> because Blazor owns this subtree and
+   not the document element - and on the shell rather than an extra wrapper so nothing sits between
+   `.dashboard-shell` and the page grids, whose responsive rules use direct-child selectors. *@
+<div class="dashboard-shell bg-base-950 flex min-h-screen flex-col @(Ui.Theme == "dark" ? "dark" : "")">
+    <a class="skip-link" href="#workspace">Skip to workspace</a>
+
+    <Header />
+
+    <main id="workspace" tabindex="-1" class="dashboard-content flex min-w-0 flex-1 flex-col">
+        @Body
+    </main>
+</div>
+
+@*
+    MODAL OUTLET. Every modal renders HERE, not where it is declared.
+
+    THIS IS LOAD-BEARING, and the reason is easy to miss. `position: fixed` does NOT
+    resolve against the viewport when any ancestor has a transform, filter,
+    backdrop-filter, perspective, will-change or contain — that ancestor becomes the
+    containing block instead. `.brand-header` carries `backdrop-filter: blur(8px)`, so
+    a dialog declared inside the header (the MODEL / DATA chip lives there) centred
+    itself on the 128px header rather than the screen: the panel hung off the top edge
+    and its `inset: 0` overlay dimmed only the header strip.
+
+    The React app never hit this because Radix Dialog portals to <body>. This outlet is
+    the Blazor equivalent, and it must stay OUTSIDE `.dashboard-shell` and outside the
+    header. The section name must match the SectionContent in Dialog.razor and
+    DiagnosticsDialog.razor.
+*@
+<SectionOutlet SectionName="crm04-modals" />
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <span class="dismiss">&times;</span>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Ui.ThemeChanged += OnThemeChanged;
+    }
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Ui.ThemeChanged -= OnThemeChanged;
+    }
+}

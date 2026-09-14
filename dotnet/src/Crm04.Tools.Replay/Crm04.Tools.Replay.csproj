@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Crm04.Tools.Replay - the M1 demo harness.
+
+    Reads the exported JSONL replay and drives the full domain pipeline
+    (TagFactory -> MachineStateProjector -> AlarmEngine / InterlockEngine) at 10 Hz,
+    printing MachineState to the console. No database, no UI, no API.
+
+    Its purpose is to make the domain port demonstrable and debuggable on its own, before
+    Oracle or Blazor exist.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Crm04.Tools.Replay</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Crm04.Domain\Crm04.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,107 @@
+@*
+    PARAMETER GROUP - the full process-parameter set, grouped and tabulated.
+
+    The KPI ribbon above is the high-priority SUBSET of these; this is the whole list. Rows are a
+    table rather than cards on purpose: forty parameters as forty cards is unreadable, and an
+    operator comparing an actual against its setpoint wants them aligned in a column.
+
+    Each group carries a muted accent on its heading edge purely as WAYFINDING - it tells you
+    which group you are in. It is deliberately desaturated so it can never be mistaken for a
+    status colour, which is the only thing on this screen allowed to be vivid.
+
+    Groups collapse (chevron header, animated, state survives navigation) and flash when located
+    from a schematic region click.
+
+    Port of src/components/panels/ParameterGroup.tsx.
+*@
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject UiStore Ui
+@inject UiTickService Ticker
+@implements IDisposable
+
+<section class="param-group border-line bg-base-900 border @(Flashed ? "row-located" : "")"
+         style="--group-accent:@Accent" data-group="@Title">
+    <Collapsible Collapsed="Ui.CollapsedGroups.Contains(Title)" CollapsedChanged="OnCollapsed">
+        <Header>
+            <span class="param-group-title flex flex-1 items-center gap-2">
+                @if (Icon is not null)
+                {
+                    <span aria-hidden="true" class="inline-flex items-center"><Icon Name="@Icon" Size="14" /></span>
+                }
+                <span class="truncate">@Title</span>
+                <span class="param-count" aria-label="@Rows.Count parameters">@Rows.Count</span>
+            </span>
+        </Header>
+        <ChildContent>
+            <div class="px-4 py-2.5">
+                @foreach (var row in Rows)
+                {
+                    @if (row.Derived is { } d)
+                    {
+                        <DerivedRow Label="@row.Label" Value="@d.Value" Unit="@d.Unit" Tone="@d.Tone"
+                                    Title="@d.Title" @key="row.Label" />
+                    }
+                    else
+                    {
+                        <ReadoutRow Label="@row.Label" TagName="@(row.TagName!)" Decimals="@row.Decimals"
+                                    Scale="@row.Scale" UnitOverride="@row.UnitOverride" Signed="@row.Signed"
+                                    @key="row.Label" />
+                    }
+                }
+                @Footer
+            </div>
+        </ChildContent>
+    </Collapsible>
+</section>
+
+@code {
+    /// <summary>One row: either a tag-backed value, or a derived one in the dimmer treatment.</summary>
+    public sealed record Row(
+        string Label,
+        string? TagName = null,
+        int? Decimals = null,
+        double Scale = 1d,
+        string? UnitOverride = null,
+        bool Signed = false,
+        DerivedValue? Derived = null);
+
+    public sealed record DerivedValue(string Value, string? Unit = null, string Tone = "normal", string? Title = null);
+
+    [Parameter, EditorRequired] public string Title { get; set; } = default!;
+
+    /// <summary>Group accent. WAYFINDING ONLY - never health.</summary>
+    [Parameter, EditorRequired] public string Accent { get; set; } = default!;
+
+    [Parameter] public string? Icon { get; set; }
+
+    [Parameter, EditorRequired] public IReadOnlyList<Row> Rows { get; set; } = [];
+
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    private bool Flashed => Ui.HighlightGroup == Title;
+
+    private (bool Collapsed, bool Flashed) _seenState;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        // Rows repaint themselves per tag; the section only cares about fold/flash state.
+        var state = (Ui.CollapsedGroups.Contains(Title), Flashed);
+        if (state == _seenState) return false;
+        _seenState = state;
+        return true;
+    }
+
+    private Task OnCollapsed(bool shut)
+    {
+        if (shut) Ui.CollapsedGroups.Add(Title);
+        else Ui.CollapsedGroups.Remove(Title);
+        return Task.CompletedTask;
+    }
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

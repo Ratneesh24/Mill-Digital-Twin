@@ -1,0 +1,205 @@
+/**
+ * ENGINEERING CONFIGURATION — §8 of the master spec.
+ *
+ * EVERY coefficient used by any equation in `src/simulation` lives here.
+ * There are no magic numbers in the model files: if a number influences a
+ * physical result, it is declared in this file with its unit, its source and
+ * its limitation.
+ *
+ * IMPORTANT (§19.6): these are SIMPLIFIED TEXTBOOK RELATIONS chosen so the twin
+ * is internally consistent. They are NOT the mill's technology model. Swapping
+ * in the real ABP / mill-technology model means replacing the functions in
+ * `src/simulation/*` — the frontend never sees the difference.
+ */
+import { millConfig } from './millConfig';
+/**
+ * Steel density, kg/m³ — used only for coil mass and inertia display.
+ * Standard value for low-carbon steel; not a tuning parameter.
+ */
+export const STEEL_DENSITY = 7850;
+/** Standard gravity, m/s² — for the t ↔ kN conversion. */
+export const GRAVITY = 9.80665;
+/**
+ * kgf -> kN. Declared here rather than imported from `unitConversion` because
+ * that module imports GRAVITY from this one; going the other way as well would
+ * make the cycle load-order dependent for no benefit.
+ *
+ * The FPE manual states every tension in kgf (§1.4). This is the single point
+ * where those become the kN the rest of the twin works in.
+ */
+function kgfToKN(kgf) {
+    return (kgf * GRAVITY) / 1000;
+}
+/**
+ * Loading pressure at the mill's rated force, bar.
+ *
+ * Computed from the real cylinder geometry (§6.2, Table I item 19: ram type,
+ * Ø420, one per housing) so the hydraulic readout and the force readout are the
+ * same physical statement rather than two independently tuned numbers.
+ *
+ * 1 kg/cm² = 0.980665 bar.
+ */
+const ROLL_FORCE_RAM_AREA_CM2 = 2 * (Math.PI / 4) * Math.pow(millConfig.ratings.rollForceCylinderBore / 10, 2);
+const ROLL_FORCE_PRESSURE_AT_MAX_BAR = ((millConfig.ratings.maxRollingForce * 1000) / ROLL_FORCE_RAM_AREA_CM2) * 0.980665;
+export const engineeringConfig = {
+    /**
+     * Low-carbon cold-rolling grade, annealed hot band. 450 MPa is a representative
+     * mean flow stress before hardening. LIMITATION: a single scalar cannot
+     * represent a grade family; the real model uses a per-grade flow curve.
+     */
+    materialFactor: 450,
+    /**
+     * kf = kf0·(1 + C·ε)^n with C = 8.0, n = 0.22 — a Ludwik-type hardening fit for
+     * low-carbon steel over 0 < ε < 1.4. LIMITATION: fitted shape only, not a
+     * measured curve for any specific Tata grade.
+     */
+    hardeningCoefficient: 8.0,
+    hardeningExponent: 0.22,
+    /**
+     * µ = 0.045 — typical for cold rolling with a rolling-oil emulsion
+     * (Bamerol Aquarol 411B / Servosteeroll C105). LIMITATION: friction actually
+     * varies with speed, emulsion concentration and roll roughness; here it is a
+     * constant.
+     */
+    frictionFactor: 0.045,
+    mechanicalEfficiency: 0.92,
+    millModulus: millConfig.ratings.millModulus,
+    /** Forged steel work roll. */
+    rollYoungsModulus: 210_000,
+    rollPoissonRatio: 0.3,
+    /**
+     * a/L = 0.45. In cold rolling the resultant acts between the neutral point and
+     * the exit; 0.4–0.5 is the accepted band. LIMITATION: constant, whereas the
+     * true lever arm shifts with friction hill shape.
+     */
+    leverArmRatio: 0.45,
+    /**
+     * Forward slip f = 0.03. Keeps roll surface speed and strip exit speed
+     * mutually consistent so mass flow closes. LIMITATION: f actually depends on
+     * reduction, friction and tension; a constant is a deliberate simplification.
+     */
+    forwardSlip: 0.03,
+    /** 2/√3 = 1.155 — plane-strain (von Mises) constraint factor. */
+    planeStrainFactor: 1.1547,
+    /**
+     * Roll flattening and force are mutually dependent, and on thin strip the
+     * fixed point converges slowly (R' can reach 2x nominal). Three iterations
+     * under-predicts force by 15-20% on a light pass; eight converges to well
+     * inside 1 t on the whole schedule.
+     */
+    hitchcockIterations: 8,
+    hitchcockToleranceMm: 0.01,
+    forceLimits: {
+        warning: millConfig.ratings.maxRollingForce * 0.8, // 560 t
+        alarm: millConfig.ratings.maxRollingForce * 0.92, // 644 t
+        trip: millConfig.ratings.maxRollingForce, // 700 t
+    },
+    motorLimits: {
+        currentMax: millConfig.ratings.mainDriveRatedCurrent,
+        powerMax: millConfig.ratings.mainDriveRating,
+        torqueMax: millConfig.ratings.mainDriveRatedTorque,
+    },
+    /**
+     * Tension limits in kN, converted here — and only here — from the kgf figures
+     * the FPE manual states (§1.4): 6900 kg maximum up to 350 m/min, 690 kg
+     * minimum. Both tension reels are identical machines, so entry and exit share
+     * one envelope; which of them is currently "entry" is a role, not a rating.
+     *
+     * This is a NARROW mill with modest tension capability. 67.7 kN over a 450 mm
+     * x 2.8 mm section is only ~54 N/mm2, so the early passes run at low specific
+     * tension and absorb the difference as force. That is a real constraint of the
+     * machine, not a modelling convenience.
+     */
+    tensionLimits: {
+        entryMin: kgfToKN(millConfig.ratings.reelTensionMinKg),
+        entryMax: kgfToKN(millConfig.ratings.reelTensionMaxKg),
+        exitMin: kgfToKN(millConfig.ratings.reelTensionMinKg),
+        exitMax: kgfToKN(millConfig.ratings.reelTensionMaxKg),
+    },
+    speedLimits: {
+        max: millConfig.ratings.maxMillSpeed,
+        threadingSpeed: millConfig.ratings.threadingSpeed,
+    },
+    specificTensionLimits: { min: 10, max: 180 },
+    thicknessTolerance: millConfig.ratings.thicknessToleranceUm,
+    /**
+     * σ = 1.1 µm. Chosen so that a healthy AGC keeps the displayed gauge signal
+     * inside the ±5 µm target while still showing realistic instrument scatter.
+     * LIMITATION: white noise only — real X-ray gauges also drift and alias with
+     * strip flutter.
+     */
+    gaugeNoise: { sigma: 1.1 },
+    acceleration: 55,
+    deceleration: 70,
+    fastStopDeceleration: 260,
+    hagcSlewRate: 4.0,
+    /**
+     * HAGC gains. The loop drives S0 so that the gaugemeter thickness converges on
+     * the pass reference. Tuned for a stable response at the 20 Hz sim tick.
+     * LIMITATION: the real HAGC is a cascaded position/pressure loop at 100 Hz+
+     * with mass-flow and feed-forward trims; this is a single PI on thickness.
+     */
+    hagcGainP: 0.55,
+    hagcGainI: 0.9,
+    tensionTimeConstant: 0.55,
+    /**
+     * DERIVED from the actual cylinder, not guessed. The manual gives two Ø420 ram-
+     * type roll force cylinders, one at the top of each housing (§6.2), and a 360 T
+     * mill rating (§1.1):
+     *
+     *   p = F / (2 · πD²/4) = 360 000 kgf / (2 · 1385.4 cm²) = 130 kg/cm² ≈ 127 bar
+     *
+     * which sits comfortably inside the manual's 210 kg/cm² working limit — as it
+     * must, since the rating is set by the stand, not by the hydraulics.
+     */
+    hydraulicPressureAtMaxForce: ROLL_FORCE_PRESSURE_AT_MAX_BAR,
+    /** Low-pressure alarm, bar — the same proportion of full load as before. */
+    hydraulicPressureMin: Math.round(ROLL_FORCE_PRESSURE_AT_MAX_BAR * 0.32),
+    lpSystemPressure: 4.5,
+    staleAfterMs: 3000,
+    /**
+     * 10 Hz — one of the publish rates §14.2 asks the twin to work at, and a
+     * realistic edge-gateway rate. The scene stays continuous at this rate
+     * because every visual value is damped in `twinEngine` (§10.4), which is the
+     * same mechanism that will carry the 0.2 Hz historian replay case.
+     */
+    simulationTickMs: 100,
+    telemetrySampleMs: 250, // 4 Hz
+    chartRefreshMs: 500, // 2 Hz repaint
+    solver: { maxIterations: 12, toleranceMm: 1e-5, relaxation: 0.6 },
+};
+/**
+ * Deterministic pseudo-random generator.
+ *
+ * §19.2 forbids "random independent values". Instrument noise is nevertheless
+ * physically real, so it is produced by a SEEDED generator: the simulation is
+ * reproducible run-to-run, and noise is applied only at the point where a real
+ * instrument would add it (the X-ray gauge signal), never to a process value
+ * that other values depend on.
+ */
+export class SeededRandom {
+    state;
+    constructor(seed = 0x2f6e2b1) {
+        this.state = seed >>> 0;
+    }
+    /** xorshift32 — uniform in [0, 1). */
+    next() {
+        let x = this.state;
+        x ^= x << 13;
+        x >>>= 0;
+        x ^= x >> 17;
+        x ^= x << 5;
+        x >>>= 0;
+        this.state = x;
+        return x / 0x1_0000_0000;
+    }
+    /** Box–Muller normal deviate, mean 0, unit variance. */
+    normal() {
+        const u1 = Math.max(this.next(), Number.EPSILON);
+        const u2 = this.next();
+        return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    }
+    reset(seed = 0x2f6e2b1) {
+        this.state = seed >>> 0;
+    }
+}

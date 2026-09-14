@@ -85,6 +85,16 @@ export function isMoving(status: MachineStatus): boolean {
 }
 
 /**
+ * Whether a normal START is meaningful from this state. FAST_STOP is
+ * deliberately absent: a fast stop must be RESET before the mill will accept a
+ * start, which is how the real mill behaves. The UI uses this to disable or
+ * explain the START button instead of letting the click vanish silently.
+ */
+export function isStartable(status: MachineStatus): boolean {
+  return STARTABLE.has(status)
+}
+
+/**
  * Whether the mill is allowed to develop rolling force. REVERSING holds the
  * strip but does not roll, so force must fall to the standstill value — a twin
  * that keeps showing rolling force through a reversal is showing a value the

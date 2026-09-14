@@ -73,9 +73,15 @@ screen are model output rather than measurement:
 The twin is **internally consistent but not calibrated**. See
 [ASSUMPTIONS.md](ASSUMPTIONS.md) for the full register. In short:
 
-- Ten geometry and rating parameters are placeholders, including the mill
-  modulus M — which sets how much of a gap change appears as thickness and how
-  much as force, and therefore affects everything.
+- Geometry and ratings now come from the OEM manual (FPE CRM04 Operation &
+  Maintenance Manual, reproduced in
+  [CRM04_MECHANICAL_DATA_BOOK.md](CRM04_MECHANICAL_DATA_BOOK.md)). Four
+  placeholders survive, of which **the mill modulus M** matters most — it sets
+  how much of a gap change appears as thickness and how much as force, and
+  therefore affects everything. The manual never states it.
+- Every **line centre-line spacing** is a reconstruction. The manual dimensions
+  them on EU 01 1 A1 but its own §14 records the scan as illegible. The line
+  *order* is confirmed; the distances drive the 3D layout only.
 - The material model is a generic low-carbon flow curve, not a Tata grade family.
 - The force model has **never been baselined against CRM04**, and §22 item 5
   flags that baselining is blocked behind the standing −9 t AGC differential
@@ -139,6 +145,43 @@ to the automation team than a missing one.
 
 ---
 
+## 4a. The auxiliary line is geometry, not instrumentation
+
+The 3D scene now carries the whole line the manual describes — pay-off reel with
+snubber, peeler, pinch roll cum flattener, carry-over table, entry and delivery
+deflector rolls, isotope gauges, air knife wipers, crop shear, three pit-mounted
+coil cars with storage saddles, and the mill enclosure with its hoods.
+
+**None of it except the deflector rolls has a tag on the CRM04 feed.** So none of
+it moves. Each part is drawn in the state it holds while the mill is rolling:
+
+| Equipment | Drawn as | Why that state |
+|---|---|---|
+| Peeler | Retracted, knife back | §12.2 step 2 |
+| Pinch roll / flattener | Top rolls raised, coupler disengaged | §12.4 steps 5–6 |
+| Carry-over table | Lowered to parking | §12.5 step 3 |
+| Crop shear | Open, top knife raised | §5.7 — the knife holder is locked for any work at the shear |
+| Snubber | Lowered onto the coil, arm angle following the POR coil diameter | §12.1 step 7 |
+| Coil cars | Retracted, elevator down | §8 — *"coil cars must be in the retracted position during rolling"* |
+
+Selecting any of them in the equipment inspector reports **NOT INSTRUMENTED**
+rather than borrowing a nearby tag. That distinction matters: an operator has to
+be able to tell "this part has no sensor" from "this value is currently
+unavailable".
+
+The **deflector rolls are the exception and do rotate.** The strip wraps them, so
+their surface speed is the strip speed, and §5.6 puts the AGC speed encoders on
+them — on both the operator and drive side. They are the only genuinely
+instrumented part of the auxiliary line, and the only part the twin animates.
+
+**POR is modelled parked.** On the real first pass the strip runs POR → peeler →
+flattener → carry-over table → over an *idle* ETR → mill → DTR, and ETR only
+becomes a coiler from pass 2. The twin does not model that threading pass: it
+pays off from ETR on pass 1 and keeps POR braked with the next coil. Modelling it
+properly needs a pass-0 threading state in the simulation engine.
+
+---
+
 ## 5. Application-level limitations
 
 - **LIVE mode has never been exercised against a real gateway.** The WebSocket
@@ -155,7 +198,18 @@ to the automation team than a missing one.
   cadence, so the multi-series chart aligns by index; a source that publishes
   signals at genuinely different rates would need timestamp interpolation.
 - **Layout is optimised for 1920×1080.** It reflows, but the three-column
-  overview is tight below about 1500 px wide.
+  overview is tight below about 1500 px wide. Concretely: the header command bar
+  fits on one row until an **alarm pill** appears, and below about 1500 px that
+  conditional sixth item wraps the bar onto a second row (measured 62 px with no
+  pill and 106 px with one, at the same 1280 px width). That is `flex-wrap`
+  degrading as designed rather than an overflow, and `npm run check:layout`
+  asserts it accordingly — one row when no alarm is active, two at most when one
+  is.
+- **Escape does not close the diagnostics dialog.** `DiagnosticsDialog.razor`
+  wires no key handler, so the MODEL / DATA dialog closes on its ✕ or on the
+  overlay but not on Escape — a gap against the React original, which closed on
+  all three. A modal should close on Escape; until it does, `npm run check:smoke`
+  asserts the ✕ path that works rather than a behaviour that does not exist.
 - **Browser only, WebGL required.** The smoke test runs against software WebGL
   (SwiftShader), so it will render on a machine without a GPU, but slowly.
 

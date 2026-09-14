@@ -37,20 +37,20 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="bg-base-950 flex h-full items-center justify-center p-8">
         <div className="border-alarm/60 bg-base-900 max-w-[720px] border p-5">
-          <h1 className="text-alarm text-[15px] font-semibold tracking-[0.12em]">
+          <h1 className="text-alarm text-body font-semibold tracking-[0.12em]">
             TWIN STOPPED — RENDER ERROR
           </h1>
-          <p className="text-text-dim mt-2 text-[12px] leading-relaxed">
+          <p className="text-text-dim mt-2 text-meta leading-relaxed">
             This screen is no longer reflecting the mill. Do not use it to judge machine state.
           </p>
-          <pre className="num text-text-faint border-line bg-base-950 mt-3 max-h-[300px] overflow-auto border p-2 text-[10px] leading-relaxed">
+          <pre className="num text-text-faint border-line bg-base-950 mt-3 max-h-[300px] overflow-auto border p-2 text-micro leading-relaxed">
             {error.message}
             {info ? `\n${info}` : ''}
           </pre>
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="border-line text-text-dim hover:border-normal/50 hover:text-normal mt-3 border px-3 py-1.5 text-[11px] tracking-wider transition-colors"
+            className="border-line text-text-dim hover:border-normal/50 hover:text-normal mt-3 border px-3 py-1.5 text-meta tracking-wider transition-colors"
           >
             RELOAD
           </button>

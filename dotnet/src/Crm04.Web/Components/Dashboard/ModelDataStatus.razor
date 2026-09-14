@@ -1,0 +1,57 @@
+@*
+    MODEL / DATA STATUS - the chip in the sticky header bar.
+
+    Opens the diagnostics dialog (tag inventory, plant config, feed
+    diagnostics, event timeline). The verdict is about the FEED, not the
+    mill: "can I trust what I am looking at", never "is the mill healthy".
+*@
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<button type="button" @onclick="() => _open = true" title="@Title" aria-haspopup="dialog"
+        class="@ChipClass">
+    <Icon Name="Activity" Size="14" />
+    MODEL / DATA &middot; @Verdict
+</button>
+
+<DiagnosticsDialog Open="_open" OnClose="Close" />
+
+@code {
+    private bool _open;
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen && !_open) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private void Close() { _open = false; }
+
+    private bool Connected => Mill.Summary?.Communication.Connected ?? false;
+    private bool Stale => Mill.Summary?.Communication.Stale ?? true;
+
+    private string Verdict => !Connected ? "NO FEED" : Stale ? "STALE" : "HEALTHY";
+
+    private string ChipClass =>
+        "text-meta inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 font-semibold shadow-sm " +
+        (!Connected || Stale
+            ? "border-alarm/50 bg-alarm/10 text-alarm"
+            : "border-healthy/50 bg-healthy/10 text-healthy");
+
+    private string Title => !Connected
+        ? "No telemetry feed. Open diagnostics for detail."
+        : Stale
+            ? "The feed has stopped updating. Open diagnostics for detail."
+            : $"Feed healthy at {Mill.Summary?.Communication.UpdateRateHz:F1} Hz. Open diagnostics.";
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

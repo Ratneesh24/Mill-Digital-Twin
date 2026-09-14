@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Crm04.Persistence - Oracle access, in two distinct halves.
+
+      EF Core   owns migrations and the low-rate entities: TAG_DEF, COIL, PASS_SCHEDULE*,
+                ALARM_EVENT, MACHINE_EVENT.
+      ODP.NET   owns the 10 Hz hot path: RawFrameReader / RawFrameWriter use
+                OracleDataReader and OracleCommand.ArrayBindCount directly. EF Core is
+                not on that path on purpose - change-tracking ~1,080 entities/second is
+                indefensible, and array binding has no EF equivalent.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Crm04.Persistence</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Crm04.Domain\Crm04.Domain.csproj" />
+  </ItemGroup>
+
+  <!--
+    The SQL statement splitter and the partition-bound parser are internal - nothing outside this
+    assembly should call them - but they are precisely the parts worth testing without a database,
+    because both fail expensively against a live Oracle: a mis-split script half-creates a schema,
+    and a mis-parsed high value drops the wrong partition.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Crm04.Persistence.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Oracle.EntityFrameworkCore" />
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

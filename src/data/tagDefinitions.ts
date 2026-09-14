@@ -681,6 +681,153 @@ export const tagDefinitions: TagDefinition[] = [
     liveAvailability: 'UNAVAILABLE',
     liveNote: 'Gauge readings are present but the gauge ready/standardise status word is not.',
   }),
+
+  // ---------------------------------------------------------------------------
+  // DECLARED GAPS — parameters the operations screen asks for that this twin
+  // cannot source. They are declared rather than omitted so the dashboard can
+  // show the parameter, name it, and say NO TAG with a reason, instead of
+  // quietly leaving a hole where an operator expects a number.
+  //
+  // These carry `simulationProvenance: 'UNAVAILABLE'` as well as
+  // `liveAvailability: 'UNAVAILABLE'`, which matters: `resolveProvenance`
+  // returns the simulation provenance unconditionally in SIMULATION mode, so
+  // anything less would invent a value in the demo that does not exist in the
+  // model either. There is no emitter for any of them, by design.
+  //
+  // PROMOTION PATH: when PIMS starts carrying one, flip `liveAvailability`,
+  // drop the `liveNote`, and add it to the frame builder. Nothing else changes.
+  // ---------------------------------------------------------------------------
+  def({
+    tagName: 'AGC.ERROR',
+    description: 'AGC thickness error (controller input)',
+    unit: 'µm',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote:
+      'The HAGC controller internals are not published. The thickness deviation is the same error the loop acts on — use that.',
+    decimals: 1,
+  }),
+  def({
+    tagName: 'AGC.OUTPUT',
+    description: 'AGC gap command (controller output)',
+    unit: 'mm',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'No HAGC controller output word in the extract.',
+    decimals: 3,
+  }),
+  def({
+    tagName: 'AGC.GAP.CORRECTION',
+    description: 'AGC gap correction term',
+    unit: 'mm',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote:
+      'Computed inside the thickness model and consumed immediately; never published as a value.',
+    decimals: 3,
+  }),
+  def({
+    tagName: 'HYD.FLOW',
+    description: 'Hydraulic system flow',
+    unit: 'LPM',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'No hydraulic flow instrument on the CRM04 extract.',
+    decimals: 0,
+  }),
+  def({
+    tagName: 'HYD.TEMPERATURE',
+    description: 'Hydraulic oil temperature',
+    unit: '°C',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'No temperature instrumentation reaches this twin — see §22.',
+    decimals: 1,
+  }),
+  def({
+    tagName: 'COOLANT.TEMPERATURE',
+    description: 'Roll coolant temperature',
+    unit: '°C',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'No temperature instrumentation reaches this twin — see §22.',
+    decimals: 1,
+  }),
+  def({
+    tagName: 'COOLANT.FLOW',
+    description: 'Roll coolant flow',
+    unit: 'LPM',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'Only a coolant health word is published, never the flow itself.',
+    decimals: 0,
+  }),
+  def({
+    tagName: 'COOLANT.PRESSURE',
+    description: 'Roll coolant header pressure',
+    unit: 'bar',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'Only a coolant health word is published, never the pressure itself.',
+    decimals: 1,
+  }),
+  def({
+    tagName: 'COOLANT.TANK.LEVEL',
+    description: 'Coolant tank level',
+    unit: '%',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'No tank level instrument on the CRM04 extract.',
+    decimals: 0,
+  }),
+  def({
+    tagName: 'LUBRICATION.FLOW',
+    description: 'Drive lubrication flow',
+    unit: 'LPM',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'Only a lubrication health word is published, never the flow itself.',
+    decimals: 0,
+  }),
+  def({
+    tagName: 'LUBRICATION.TEMPERATURE',
+    description: 'Drive lubrication oil temperature',
+    unit: '°C',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote: 'No temperature instrumentation reaches this twin — see §22.',
+    decimals: 1,
+  }),
+  def({
+    tagName: 'MILL.ENERGY.COIL',
+    description: 'Energy consumed on the current coil',
+    unit: 'kWh',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote:
+      'Requires integrating power across the whole coil. A browser can only measure how long its own tab has been open, so this must come from the historian.',
+    decimals: 1,
+  }),
+  def({
+    tagName: 'MILL.ENERGY.TODAY',
+    description: 'Energy consumed since 00:00',
+    unit: 'kWh',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote:
+      'A day total cannot be reconstructed by a client that was not running all day — this must come from the historian.',
+    decimals: 0,
+  }),
+  def({
+    tagName: 'MILL.TIME.ROLLING.DAY',
+    description: 'Mill rolling time since 00:00',
+    unit: 's',
+    simulationProvenance: 'UNAVAILABLE',
+    liveAvailability: 'UNAVAILABLE',
+    liveNote:
+      'A day total cannot be reconstructed by a client that was not running all day — this must come from the historian.',
+    decimals: 0,
+  }),
 ]
 
 /**

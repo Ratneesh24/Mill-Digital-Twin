@@ -1,0 +1,471 @@
+@*
+    MILL LINE SCHEMATIC - POR -> ETR -> 4HI MILL -> DTR.
+
+    Top    = what is happening to the material (entry -> reduction -> exit).
+    Middle = where the material physically is (reels -> 4HI bite -> reel).
+    Bottom = how the mill is controlling it (bending / tilt / torque / hyd position).
+
+    POR, ETR and DTR are all tension reels drawn the same way: coil wraps when the reel
+    carries strip (diameter above the drum), a bare mandrel when empty. DTR is always
+    engaged; whether POR or ETR pays off depends on where the coil was loaded, and the
+    strip source follows that - ETR normally, POR on a threading pass with ETR empty.
+
+    PURE SVG AND CSS, no canvas and no chart library. That is not only a performance choice: the
+    dashboard must render NO canvas and NO chart, because the 3D scene belongs on its own route.
+    All SVG text stays at 11px or above so the legibility probe keeps passing.
+
+    Values come from ValueReadout / the stores - never invented here. Control parameters with no
+    tag on the active feed are OMITTED (not faked); when the mill starts providing a tag the cell
+    appears with no code change.
+
+    The click-to-locate wiring is preserved: POR -> payoff, ETR -> entry, MILL -> stand,
+    DTR -> coiler. Both directions stay inside MillRegions so the wiring cannot drift.
+*@
+@using Crm04.Domain.Machine
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@using System.Globalization
+@inject TagStore Tags
+@inject MillStore Mill
+@inject UiStore Ui
+@inject UiTickService Ticker
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="mill-line-block">
+    @* TOP: what is happening to the material *@
+    <div class="mb-1 flex items-center justify-center gap-3 text-center sm:gap-5"
+         aria-label="Pass thickness: entry, reduction, exit">
+        <div class="min-w-0">
+            <p class="label">Entry thk.</p>
+            <ValueReadout TagName="STRIP.THICKNESS.ENTRY" Size="md" Decimals="3" HideBadge="true" />
+        </div>
+        <span aria-hidden="true" class="text-text-faint text-body num">&#8594;</span>
+        <div class="min-w-0">
+            <p class="label">Reduction</p>
+            <ValueReadout TagName="STRIP.REDUCTION" Size="md" Decimals="1" HideBadge="true" />
+        </div>
+        <span aria-hidden="true" class="text-text-faint text-body num">&#8594;</span>
+        <div class="min-w-0">
+            <p class="label">Exit thk.</p>
+            <ValueReadout TagName="STRIP.THICKNESS" Size="md" Decimals="3" HideBadge="true" />
+        </div>
+    </div>
+
+<svg viewBox="0 0 680 232" role="img"
+     aria-label="4HI line POR to ETR to mill to DTR, rolling @Direction.ToLowerInvariant()"
+     class="mill-schematic @(Rolling ? "schematic-live" : "")"
+     preserveAspectRatio="xMidYMid meet">
+    <defs>
+        <linearGradient id="stripSteel" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#8fb8dd" />
+            <stop offset="0.5" stop-color="#3d6b9c" />
+            <stop offset="1" stop-color="#274a70" />
+        </linearGradient>
+        <radialGradient id="rollMetal" cx="0.35" cy="0.3" r="1">
+            <stop offset="0" stop-color="#d7e5f2" />
+            <stop offset="0.55" stop-color="#8ba5ba" />
+            <stop offset="1" stop-color="#4e6279" />
+        </radialGradient>
+        <radialGradient id="coilMetal" cx="0.4" cy="0.35" r="1">
+            <stop offset="0" stop-color="#c8d9ea" />
+            <stop offset="0.6" stop-color="#6f93b3" />
+            <stop offset="1" stop-color="#2c3d5f" />
+        </radialGradient>
+    </defs>
+
+    @* baseline *@
+    <line x1="12" y1="168" x2="668" y2="168" stroke="var(--color-line-bright)" stroke-width="2" />
+
+    @* strip spans, drawn first so the rolls sit on top of the bite. Thick on the incoming
+       (entry) side, thin on delivery; sides swap with rolling direction. The POR->ETR tail
+       exists only when POR itself pays off (threading pass, ETR empty); otherwise ETR pays
+       off forward, DTR pays off reverse, and DTR always takes delivery. *@
+    @if (Forward && EntryFromPor)
+    {
+        <rect x="92" y="@F(LeftY)" width="66" height="@F(LeftH)" rx="@F(LeftH / 2)"
+              fill="@Steel" opacity="@(Rolling ? "1" : "0.5")" />
+        <line x1="92" y1="119" x2="158" y2="119" stroke="#ffffff" stroke-width="1.4"
+              opacity="@(Rolling ? "0.85" : "0")" class="@FlowClass" />
+    }
+    <rect x="158" y="@F(LeftY)" width="170" height="@F(LeftH)" rx="@F(LeftH / 2)"
+          fill="@Steel" opacity="@(Rolling ? "1" : "0.5")" />
+    <line x1="158" y1="119" x2="328" y2="119" stroke="#ffffff" stroke-width="1.4"
+          opacity="@(Rolling ? "0.85" : "0")" class="@FlowClass" />
+    <rect x="352" y="@F(RightY)" width="200" height="@F(RightH)" rx="@F(RightH / 2)"
+          fill="@Steel" opacity="@(Rolling ? "1" : "0.5")" />
+    <line x1="352" y1="119" x2="552" y2="119" stroke="#ffffff" stroke-width="1.4"
+          opacity="@(Rolling ? "0.85" : "0")" class="@FlowClass" />
+    @* short tail leaving the delivery unit *@
+    <rect x="552" y="@F(RightY)" width="58" height="@F(RightH)" rx="@F(RightH / 2)"
+          fill="@Steel" opacity="@(Rolling ? "1" : "0.5")" />
+
+    @* one clean flow indicator on the upstream span *@
+    <g stroke="var(--color-healthy)" stroke-width="2.5" fill="none" stroke-linecap="round"
+       stroke-linejoin="round" opacity="@(Rolling ? "1" : "0.25")">
+        @foreach (var points in FlowChevrons)
+        {
+            <polyline points="@points" @key="points" />
+        }
+    </g>
+
+    @* POR: payoff reel - coil shown when loaded, bare mandrel when empty *@
+    <g class="region-clickable @Hot("payoff")" @onclick='() => LocateRegion("payoff")'>
+        <title>POR payoff reel - open TENSION parameters</title>
+        @RenderReel(62, ReelDia("POR"), ReelRunning("POR"))
+    </g>
+
+    @* ETR: entry tension reel - the coil lives here except on a POR threading pass *@
+    <g class="region-clickable @Hot("entry")" @onclick='() => LocateRegion("entry")'>
+        <title>ETR entry tension reel - open TENSION parameters</title>
+        @RenderReel(180, ReelDia("ETR"), ReelRunning("ETR"))
+    </g>
+
+    @* DTR: delivery tension reel - always engaged *@
+    <g class="region-clickable @Hot("coiler")" @onclick='() => LocateRegion("coiler")'>
+        <title>DTR delivery tension reel - open TENSION parameters</title>
+        @RenderReel(530, ReelDia("DTR"), ReelRunning("DTR"))
+    </g>
+
+    @* 4HI MILL STAND (largest component) - click opens the ROLLING parameters *@
+    <g class="region-clickable @Hot("stand")" @onclick='() => LocateRegion("stand")'>
+        <title>@($"Mill stand - force {JsNumber.ToFixed(Force, 0)} kN, gap {JsNumber.ToFixed(Gap, 3)} mm - open ROLLING parameters")</title>
+        @* housings *@
+        <rect x="260" y="30" width="26" height="138" rx="6" fill="var(--color-base-800)"
+              stroke="var(--color-line-bright)" stroke-width="2" />
+        <rect x="394" y="30" width="26" height="138" rx="6" fill="var(--color-base-800)"
+              stroke="var(--color-line-bright)" stroke-width="2" />
+
+        @* top beam + hydraulic capsule *@
+        <rect x="260" y="18" width="160" height="13" rx="5" fill="var(--color-base-700)"
+              stroke="var(--color-line-bright)" stroke-width="1.5" />
+        <rect x="322" y="4" width="36" height="18" rx="4" fill="var(--color-brand)" opacity="0.85" />
+        <rect x="322" y="4" width="36" height="6" rx="3" fill="#ffffff" opacity="0.35" />
+
+        @* load badge - originates from the stand beam *@
+        <g>
+            <rect x="298" y="36" width="84" height="20" rx="10" fill="var(--color-base-950)"
+                  stroke="var(--color-line-bright)" stroke-width="1" />
+            <text x="340" y="50" text-anchor="middle" font-size="11" font-weight="700"
+                  fill="var(--color-text)" font-family="var(--font-mono)">
+                @JsNumber.ToFixed(Force, 0) kN
+            </text>
+        </g>
+
+        @* roll stack: UBR / UWR / strip bite / LWR / LBR *@
+        <circle cx="340" cy="80" r="24" fill="url(#rollMetal)" stroke="var(--color-text-faint)" stroke-width="2" />
+        <circle cx="340" cy="80" r="6" fill="var(--color-base-800)" stroke="var(--color-text-faint)" stroke-width="1.5" />
+        <g class="@SpinTop" style="@SpinStyle" opacity="@(Rolling ? "0.55" : "0")">
+            <line x1="340" y1="58" x2="340" y2="102" stroke="#ffffff" stroke-width="2" />
+        </g>
+        <circle cx="340" cy="106" r="12" fill="var(--color-brand)" stroke="#ffffff" stroke-width="1" opacity="0.95" />
+        <circle cx="340" cy="132" r="12" fill="var(--color-brand-deep)" stroke="#ffffff" stroke-width="1" opacity="0.95" />
+        <g class="@SpinTop" style="@SpinStyle" opacity="@(Rolling ? "0.8" : "0")">
+            <line x1="340" y1="95" x2="340" y2="117" stroke="#ffffff" stroke-width="1.6" />
+        </g>
+        <g class="@SpinBottom" style="@SpinStyle" opacity="@(Rolling ? "0.8" : "0")">
+            <line x1="340" y1="121" x2="340" y2="143" stroke="#ffffff" stroke-width="1.6" />
+        </g>
+        <circle cx="340" cy="158" r="24" fill="url(#rollMetal)" stroke="var(--color-text-faint)" stroke-width="2" />
+        <circle cx="340" cy="158" r="6" fill="var(--color-base-800)" stroke="var(--color-text-faint)" stroke-width="1.5" />
+        <g class="@SpinBottom" style="@SpinStyle" opacity="@(Rolling ? "0.55" : "0")">
+            <line x1="340" y1="136" x2="340" y2="180" stroke="#ffffff" stroke-width="2" />
+        </g>
+
+        @* roll identities *@
+        <g font-size="11" fill="var(--color-text-faint)" font-family="var(--font-mono)" text-anchor="end">
+            <text x="312" y="84">UBR</text>
+            <text x="312" y="110">UWR</text>
+            <text x="312" y="136">LWR</text>
+            <text x="312" y="162">LBR</text>
+        </g>
+
+        @* roll-gap dimension anchored at the work-roll bite *@
+        <g stroke="var(--color-warning)" stroke-width="1.6">
+            <line x1="352" y1="119" x2="362" y2="119" stroke-dasharray="2 2" />
+            <line x1="362" y1="106" x2="362" y2="132" stroke-dasharray="3 3" />
+            <polyline points="358,110 362,106 366,110" fill="none" />
+            <polyline points="358,128 362,132 366,128" fill="none" />
+        </g>
+        <text x="370" y="110" font-size="11" fill="var(--color-text-faint)" font-family="var(--font-sans)">GAP</text>
+        <text x="370" y="124" font-size="11" fill="var(--color-text-dim)" font-family="var(--font-mono)">
+            @JsNumber.ToFixed(Gap, 3) mm
+        </text>
+
+        @* force arrows squeezing the stack. Length is force over the mill's rating, so a long
+           arrow genuinely means the stand is working near its limit. *@
+        <g stroke="var(--color-alarm)" stroke-width="3" stroke-linecap="round"
+           opacity="@(Force > 1 ? "0.9" : "0.25")">
+            <line x1="340" y1="@F(80 - 24 - Arrow)" x2="340" y2="54" />
+            <polyline points="333,60 340,54 347,60" fill="none" />
+            <line x1="340" y1="@F(158 + 24 + Arrow)" x2="340" y2="184" />
+            <polyline points="333,178 340,184 347,178" fill="none" />
+        </g>
+    </g>
+
+    @* equipment labels *@
+    <g font-size="11" font-weight="700" letter-spacing="1" text-anchor="middle" font-family="var(--font-sans)">
+        <text x="62" y="190" fill="var(--color-text-dim)">POR</text>
+        <text x="180" y="190" fill="var(--color-text-dim)">ETR</text>
+        <text x="340" y="204" fill="var(--color-text)">4HI MILL</text>
+        <text x="530" y="190" fill="var(--color-text-dim)">DTR</text>
+    </g>
+</svg>
+
+    @* equipment status *@
+    <div class="mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1"
+         aria-label="Equipment status">
+        @EquipStatus("POR", ReelWord(Tags.Get("POR.STATUS").Text))
+        @EquipStatus("ETR", ReelWord(Tags.Get("ETR.STATUS").Text))
+        @EquipStatus("MILL", MillWord())
+        @EquipStatus("DTR", ReelWord(Tags.Get("DTR.STATUS").Text))
+    </div>
+
+    @* BOTTOM: how the mill is controlling it - omitted when no tag is on the feed *@
+    @if (ShowWr || ShowTilt || ShowTorque || ShowHyd)
+    {
+        <div class="mt-2 flex flex-wrap items-start justify-center gap-x-6 gap-y-2 border-t border-line pt-2"
+             aria-label="Mill control parameters">
+            @if (ShowWr)
+            {
+                <div class="min-w-0 text-center">
+                    <p class="label whitespace-nowrap">WR bending T/B</p>
+                    <p class="num text-body text-text inline-flex items-baseline gap-1">
+                        @if (ShowWrTop)
+                        {
+                            <ValueReadout TagName="WR.TOP.BENDING" Size="sm" Decimals="0" Signed="true" HideBadge="true" HideUnit="true" />
+                        }
+                        @if (ShowWrTop && ShowWrBtm)
+                        {
+                            <span aria-hidden="true" class="text-text-faint">/</span>
+                        }
+                        @if (ShowWrBtm)
+                        {
+                            <ValueReadout TagName="WR.BOTTOM.BENDING" Size="sm" Decimals="0" Signed="true" HideBadge="true" HideUnit="true" />
+                        }
+                        <span class="text-text-faint text-micro">kN</span>
+                    </p>
+                </div>
+            }
+            @if (ShowTilt)
+            {
+                <div class="min-w-0 text-center">
+                    <p class="label whitespace-nowrap">DRF / tilt</p>
+                    <ValueReadout TagName="ROLL.GAP.TILT" Size="sm" Decimals="2"
+                                  Scale="@TiltMmPerUm" UnitOverride="mm" HideBadge="true" />
+                </div>
+            }
+            @if (ShowTorque)
+            {
+                <div class="min-w-0 text-center">
+                    <p class="label whitespace-nowrap">Roll torque</p>
+                    <ValueReadout TagName="DRIVE.TORQUE" Size="sm" Decimals="1" HideBadge="true" />
+                </div>
+            }
+            @if (ShowHyd)
+            {
+                <div class="min-w-0 text-center">
+                    <p class="label whitespace-nowrap">Hyd. position</p>
+                    <ValueReadout TagName="HYD.GAP.POSITION" Size="sm" Decimals="1" HideBadge="true" />
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private int _seen = -1;
+    private int _seenMill = -1;
+    private string? _seenHighlight;
+
+    /// <summary>µm → mm for the tilt readout, matching the 0.08 mm style operators expect.</summary>
+    private const double TiltMmPerUm = 0.001;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// Repaints on the global tag version rather than a single tag's: the schematic reads a dozen
+    /// process values, so gating on any one of them would freeze the rest. Mill.Version rides
+    /// along for the status words, which travel in the summary rather than the tag frame.
+    /// </summary>
+    protected override bool ShouldRender()
+    {
+        if (Tags.GlobalVersion == _seen && Mill.Version == _seenMill && Ui.HighlightTag == _seenHighlight) return false;
+        _seen = Tags.GlobalVersion;
+        _seenMill = Mill.Version;
+        _seenHighlight = Ui.HighlightTag;
+        return true;
+    }
+
+    private static string F(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private double Num(string tag) => Tags.Get(tag).Number ?? 0d;
+
+    /// <summary>Displayable only with a real value on this feed - otherwise the cell is omitted.</summary>
+    private bool IsLive(string tag)
+    {
+        var t = Tags.Get(tag);
+        return t.Present && t.Provenance != Provenance.Unavailable && t.Number is not null;
+    }
+
+    private double Force => Num("ROLL.FORCE.ACTUAL");
+    private double Speed => Num("MILL.SPEED.ACTUAL");
+    private double Gap => Num("ROLL.GAP.ACTUAL");
+
+    /// <summary>Above the Ø400 drum: the reel actually carries strip.</summary>
+    private const double CoilThreshold = 450d;
+
+    private double ReelDia(string reel) => Tags.Get($"{reel}.DIAMETER").Number ?? 0d;
+    private bool ReelRunning(string reel) => Rolling && Tags.Get($"{reel}.STATUS").Text == "RUNNING";
+
+    private bool PorLoaded => ReelDia("POR") > CoilThreshold;
+    private bool EtrLoaded => ReelDia("ETR") > CoilThreshold;
+
+    /// <summary>
+    /// POR pays off only on a threading pass (coil on POR, ETR empty). Otherwise ETR pays
+    /// off going forward and DTR going reverse - DTR is always engaged either way.
+    /// </summary>
+    private bool EntryFromPor => Forward && PorLoaded && !EtrLoaded;
+
+    private bool Forward => (Mill.Summary?.Direction ?? RollingDirection.Forward) == RollingDirection.Forward;
+    private string Direction => Mill.Summary?.Direction.ToWire() ?? "FORWARD";
+    private bool Rolling => Mill.Summary?.MachineStatus == MachineStatus.Rolling;
+
+    private string? FlowClass => Rolling ? (Forward ? "strip-flow" : "strip-flow-rev") : null;
+    private string Steel => Rolling ? "url(#stripSteel)" : "var(--color-base-600)";
+
+    /// <summary>
+    /// Strip thinning: thick on the incoming (entry) side, thin on delivery. Sides swap with
+    /// rolling direction; the equipment order never moves.
+    /// </summary>
+    private double LeftH => Forward ? 7d : 4.5d;
+    private double RightH => Forward ? 4.5d : 7d;
+    private double LeftY => 119d - LeftH / 2d;
+    private double RightY => 119d - RightH / 2d;
+
+    /// <summary>Force 0-360 t maps to an arrow length of 8-34px.</summary>
+    private double Arrow => 8d + Math.Min(1d, Force / 360d) * 26d;
+
+    /// <summary>
+    /// Roll spin follows the mill: faster strip, faster spin; reverse flips it. Top and bottom
+    /// rolls counter-rotate, as meshed rolls must. Still means standing still.
+    /// </summary>
+    private string? SpinTop => Rolling ? (Forward ? "spin-cw" : "spin-ccw") : null;
+    private string? SpinBottom => Rolling ? (Forward ? "spin-ccw" : "spin-cw") : null;
+    private string SpinSeconds => (Rolling
+        ? Math.Clamp(3.2 - Speed / 150d, 0.5, 3.2)
+        : 2.4).ToString("0.0", CultureInfo.InvariantCulture);
+    private string? SpinStyle => Rolling ? $"animation-duration:{SpinSeconds}s" : null;
+
+    private bool ShowWrTop => IsLive("WR.TOP.BENDING");
+    private bool ShowWrBtm => IsLive("WR.BOTTOM.BENDING");
+    private bool ShowWr => ShowWrTop || ShowWrBtm;
+    private bool ShowTilt => IsLive("ROLL.GAP.TILT");
+    private bool ShowTorque => IsLive("DRIVE.TORQUE");
+    private bool ShowHyd => IsLive("HYD.GAP.POSITION");
+
+    private string? Hot(string region) =>
+        Ui.HighlightTag is { } t && MillRegions.RegionFor(t) == region ? "region-hot" : null;
+
+    private async Task LocateRegion(string region)
+    {
+        Ui.HighlightTag = null;
+        if (MillRegions.RegionGroups.TryGetValue(region, out var group))
+        {
+            Ui.HighlightGroup = group;
+            try { await JS.InvokeVoidAsync("crm04ScrollToGroup", group); }
+            catch { /* helper absent - flash still shows */ }
+        }
+    }
+
+    /// <summary>One clean flow indicator on the upstream span; direction follows rolling.</summary>
+    private IEnumerable<string> FlowChevrons => Forward
+        ? new[] { 228, 242, 256 }.Select(x => $"{x},94 {x + 8},100 {x},106")
+        : new[] { 452, 438, 424 }.Select(x => $"{x},94 {x - 8},100 {x},106");
+
+    /// <summary>RUNNING = ACTIVE, FAULT = FAULT, anything else parked = READY, no word = dash.</summary>
+    private static (string Word, string Dot, string Cls) ReelWord(string? state) => state switch
+    {
+        "RUNNING" => ("ACTIVE", "var(--color-healthy)", "text-healthy"),
+        "FAULT" => ("FAULT", "var(--color-trip)", "text-trip"),
+        "STOPPED" or "UNKNOWN" => ("READY", "var(--color-healthy)", "text-healthy"),
+        _ => ("—", "var(--color-inactive)", "text-text-faint"),
+    };
+
+    private (string Word, string Dot, string Cls) MillWord()
+    {
+        if (Mill.Summary is null) return ("—", "var(--color-inactive)", "text-text-faint");
+        var s = Mill.Summary.MachineStatus;
+        var dot = s switch
+        {
+            MachineStatus.FastStop or MachineStatus.Fault => "var(--color-trip)",
+            MachineStatus.Reversing or MachineStatus.Decelerating => "var(--color-warning)",
+            _ => "var(--color-healthy)",
+        };
+        var cls = s switch
+        {
+            MachineStatus.FastStop or MachineStatus.Fault => "text-trip",
+            MachineStatus.Reversing or MachineStatus.Decelerating => "text-warning",
+            MachineStatus.Rolling => "text-healthy",
+            _ => "text-text",
+        };
+        return (MachineStatusRules.Label(s), dot, cls);
+    }
+
+    private RenderFragment EquipStatus(string label, (string Word, string Dot, string Cls) w) => __builder =>
+    {
+        <span class="text-micro inline-flex items-center gap-1.5 font-bold tracking-wider">
+            <span class="text-text-faint">@label</span>
+            <span aria-hidden="true" class="dot-glow inline-block h-2 w-2 rounded-full"
+                  style="background:@w.Dot;color:@w.Dot"></span>
+            <span class="@w.Cls">@w.Word</span>
+        </span>
+    };
+
+    /* ---------------------------------------------------------------- fragments */
+
+    /// <summary>
+    /// Tension reel: mandrel stand always, coil wraps only when loaded (diameter above the
+    /// drum), spoke spin only while running. Coil radius follows the measured diameter, so
+    /// the payoff visibly shrinks and the coiler visibly fills through a pass.
+    /// </summary>
+    private RenderFragment RenderReel(int cx, double diameter, bool running) => __builder =>
+    {
+        const int cy = 120;
+        var loaded = diameter > CoilThreshold;
+        var r = loaded ? 12d + Math.Min(1d, (diameter - 400d) / 1600d) * 20d : 10d;
+        <g>
+            @* mandrel stand *@
+            <line x1="@cx" y1="@F(cy + r)" x2="@cx" y2="168" stroke="var(--color-text-faint)" stroke-width="3" />
+            <line x1="@(cx - 14)" y1="164" x2="@(cx + 14)" y2="164" stroke="var(--color-text-faint)"
+                  stroke-width="3" stroke-linecap="round" />
+            @if (loaded)
+            {
+                @* coil body *@
+                <circle cx="@cx" cy="@cy" r="@F(r)" fill="url(#coilMetal)" stroke="var(--color-line-bright)" stroke-width="2" />
+                <circle cx="@cx" cy="@cy" r="@F(r * 0.73)" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.35" />
+                <circle cx="@cx" cy="@cy" r="@F(r * 0.47)" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.25" />
+
+                @* The spoke is what makes rotation visible - a circle of revolution shows no motion. *@
+                @if (running)
+                {
+                    <line x1="@cx" y1="@cy" x2="@F(cx + r - 8)" y2="@cy" stroke="#ffffff" stroke-width="2.5" opacity="0.7"
+                          style="@($"transform-origin:{cx}px {cy}px;animation:coil-spin {SpinSeconds}s linear infinite{(Forward ? "" : ";animation-direction:reverse")}")" />
+                }
+                <circle cx="@cx" cy="@cy" r="@F(r >= 18 ? 7 : 5)" fill="var(--color-base-800)" stroke="var(--color-line-bright)" stroke-width="2" />
+            }
+            else
+            {
+                @* bare mandrel - reel threaded out / coil not loaded here *@
+                <circle cx="@cx" cy="@cy" r="10" fill="var(--color-base-800)" stroke="var(--color-line-bright)" stroke-width="2" />
+                <circle cx="@cx" cy="@cy" r="4" fill="var(--color-base-600)" stroke="var(--color-text-faint)" stroke-width="1" />
+            }
+        </g>
+    };
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

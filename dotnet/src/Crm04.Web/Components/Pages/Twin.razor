@@ -1,0 +1,85 @@
+@page "/3d-twin"
+@*
+    3D DIGITAL TWIN PAGE.
+
+    Canvas left, controls dock right. Navigating here is view-only: the feed
+    keeps running behind the page change, so arriving from the dashboard never
+    restarts anything, and pass, direction and coil carry over untouched.
+
+    Port of src/components/pages/TwinPage.tsx. The dock carries the same two
+    panels in the same order: SimulationControls, then InterlockStatus.
+*@
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.Components.Panels
+@using Crm04.Web.Components.Twin
+@using Crm04.Web.State
+@inject MillStore Mill
+@implements IDisposable
+
+@* PRERENDERING OFF. The scene needs a real canvas element and a browser. *@
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+<PageTitle>CRM04 · 3D Digital Twin</PageTitle>
+
+<div class="dashboard-twinpage grid min-h-[640px] flex-1">
+    <div class="dashboard-twin min-h-[560px] min-w-0">
+        <TwinCanvas />
+    </div>
+
+    <div class="grid min-h-0 min-w-0 content-start gap-[14px]">
+        <SimulationControls />
+        <InterlockStatus />
+
+        <Panel Title="Alarms">
+            <Right>
+                <span class="param-count">@Mill.Alarms.Count</span>
+            </Right>
+            <ChildContent>
+                @if (Mill.Alarms.Count == 0)
+                {
+                    <p class="text-text-faint text-meta flex items-center gap-2">
+                        <span aria-hidden="true" class="text-healthy">✓</span> All clear — no active alarms
+                    </p>
+                }
+                else
+                {
+                    @foreach (var a in Mill.Alarms)
+                    {
+                        <div @key="a.Id" class="border-line flex items-baseline gap-2 border-b py-1.5 last:border-0">
+                            <span class="text-micro font-bold tracking-wider text-alarm">@a.Severity.ToWire()</span>
+                            <span class="text-meta text-text-dim flex-1">@a.Message</span>
+                        </div>
+                    }
+                }
+            </ChildContent>
+        </Panel>
+
+        @if (Mill.Summary?.Communication.Stale == true)
+        {
+            <div class="border-alarm/60 bg-alarm/10 text-alarm rounded-[--radius-card] border px-4 py-3 text-meta font-semibold">
+                DATA STALE — scene frozen. Last frame @JsNumber.ToFixed((Mill.Summary?.Communication.AgeMs ?? 0) / 1000, 1) s ago.
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Inject] private UiTickService Ticker { get; set; } = default!;
+
+    private int _seenVersion = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seenVersion) return false;
+        _seenVersion = Mill.Version;
+        return true;
+    }
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

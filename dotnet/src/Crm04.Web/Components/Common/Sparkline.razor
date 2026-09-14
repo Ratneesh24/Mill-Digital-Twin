@@ -1,0 +1,117 @@
+@*
+    Inline sparkline for the KPI tiles (§11.3).
+
+    Hand-drawn SVG rather than a chart library: a dozen of these repaint twice a second beside the
+    rest of the dashboard, and a charting component per KPI would cost far more than the pixels
+    are worth. Port of src/components/common/Sparkline.tsx.
+
+    Data comes from TagStore's short rolling buffer, not from /api/trends - a sparkline is a
+    glance at the last few seconds, and fetching one over HTTP per tile per repaint would be
+    absurd for a 26-pixel trace.
+*@
+@using System.Globalization
+@using System.Text
+@using Crm04.Web.State
+@inject TagStore Tags
+
+@if (_path is null)
+{
+    <div class="border-line/60 border-b border-dashed"
+         style="width:@(Fluid ? "100%" : W + "px");height:@(H)px"></div>
+}
+else
+{
+    <svg width="@(Fluid ? "100%" : W.ToString(CultureInfo.InvariantCulture))" height="@H"
+         viewBox="0 0 @W @H" preserveAspectRatio="@(Fluid ? "none" : null)" class="overflow-visible"
+         aria-hidden="true">
+        <defs>
+            <linearGradient id="@_gradientId" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="@Color" stop-opacity="0.35" />
+                <stop offset="1" stop-color="@Color" stop-opacity="0.02" />
+            </linearGradient>
+        </defs>
+        <path d="@_fill" fill="url(#@_gradientId)" />
+        @* vector-effect keeps the stroke 1.75px even though preserveAspectRatio="none" stretches
+           the viewBox horizontally - without it the trace would thin out on a wide card. *@
+        <path d="@_path" fill="none" stroke="@Color" stroke-width="@(Fluid ? "1.75" : "1.25")"
+              vector-effect="non-scaling-stroke" />
+    </svg>
+}
+
+@code {
+    /// <summary>The tag whose recent history is drawn.</summary>
+    [Parameter, EditorRequired] public string TagName { get; set; } = default!;
+
+    [Parameter] public string Color { get; set; } = "var(--color-brand)";
+
+    /// <summary>Stretch to the container's width. The viewBox still controls path resolution.</summary>
+    [Parameter] public bool Fluid { get; set; }
+
+    [Parameter] public int Height { get; set; } = 22;
+
+    private const int W = 88;
+
+    private int H => Height;
+
+    private readonly string _gradientId = "spark-" + Guid.NewGuid().ToString("N")[..8];
+
+    private string? _path;
+    private string? _fill;
+    private int _seenVersion = -1;
+
+    protected override bool ShouldRender()
+    {
+        var version = Tags.VersionOf(TagName);
+        if (version == _seenVersion) return false;
+        _seenVersion = version;
+        Build();
+        return true;
+    }
+
+    protected override void OnParametersSet()
+    {
+        _seenVersion = -1;
+        Build();
+    }
+
+    private void Build()
+    {
+        var points = Tags.Spark(TagName);
+        if (points.Length < 2)
+        {
+            _path = null;
+            _fill = null;
+            return;
+        }
+
+        var min = double.MaxValue;
+        var max = double.MinValue;
+        foreach (var v in points)
+        {
+            if (v < min) min = v;
+            if (v > max) max = v;
+        }
+
+        // A flat signal has no range; pad it rather than dividing by zero, which centres the
+        // trace instead of drawing it along an edge.
+        var span = max - min;
+        var pad = span < 1e-9 ? 1d : span * 0.12;
+        var lo = min - pad;
+        var hi = max + pad;
+
+        var sb = new StringBuilder(points.Length * 12);
+        for (var i = 0; i < points.Length; i++)
+        {
+            var x = (double)i / (points.Length - 1) * W;
+            var y = H - (points[i] - lo) / (hi - lo) * H;
+            sb.Append(i == 0 ? 'M' : 'L')
+              .Append(x.ToString("0.#", CultureInfo.InvariantCulture))
+              .Append(',')
+              .Append(y.ToString("0.#", CultureInfo.InvariantCulture))
+              .Append(' ');
+        }
+
+        _path = sb.ToString().TrimEnd();
+        _fill = $"{_path} L{W},{H} L0,{H} Z";
+    }
+}

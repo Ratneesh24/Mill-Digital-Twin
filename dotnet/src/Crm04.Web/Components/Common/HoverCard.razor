@@ -1,0 +1,20 @@
+@*
+    HOVER CARD - hover disclosure in the shadcn HoverCard spirit, pure CSS.
+
+    No JS, no timers: keyboard users get the same content through the focusable trigger.
+    Content must stay glanceable (a few rows) - anything longer belongs in a Dialog.
+*@
+<span class="ui-hovercard" tabindex="0" aria-describedby="@_id">
+    @Trigger
+    <span class="ui-hovercard-card" role="tooltip" id="@_id">
+        @Card
+    </span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment Trigger { get; set; } = default!;
+
+    [Parameter, EditorRequired] public RenderFragment Card { get; set; } = default!;
+
+    private readonly string _id = "hc" + Guid.NewGuid().ToString("N")[..8];
+}

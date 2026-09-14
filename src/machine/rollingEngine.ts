@@ -11,7 +11,7 @@
  * that "force utilisation" means exactly one thing everywhere it appears (§18).
  */
 
-import { engineeringConfig } from '../config/engineeringConfig'
+import { engineeringConfig, STEEL_DENSITY } from '../config/engineeringConfig'
 import { millConfig } from '../config/millConfig'
 import type { MachineState } from '../types/machine'
 
@@ -91,7 +91,7 @@ export function specificEnergy(state: MachineState): number {
   const widthM = state.coil.width / 1000
   const speedMps = state.speed.actual / 60
   // t/h = m³/s × kg/m³ × 3600 / 1000
-  const throughputTph = thicknessM * widthM * speedMps * 7850 * 3.6
+  const throughputTph = thicknessM * widthM * speedMps * STEEL_DENSITY * 3.6
   if (throughputTph <= 0.001) return 0
   return state.drive.power / throughputTph
 }
@@ -101,7 +101,7 @@ export function throughput(state: MachineState): number {
   const thicknessM = state.thickness.actual / 1000
   const widthM = state.coil.width / 1000
   const speedMps = state.speed.actual / 60
-  return thicknessM * widthM * speedMps * 7850 * 3.6
+  return thicknessM * widthM * speedMps * STEEL_DENSITY * 3.6
 }
 
 /** Estimated time to finish the current pass, seconds. */
@@ -120,4 +120,13 @@ export function formatDuration(seconds: number | null): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+/** Format seconds as hh:mm:ss for day totals such as rolling time. */
+export function formatHMS(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '—'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }

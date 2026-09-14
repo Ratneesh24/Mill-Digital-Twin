@@ -1,5 +1,12 @@
 # CRM04 · 4HI Reversing Cold Rolling Mill — Digital Twin
 
+> **Single-stack decision: the delivered UI is the .NET Blazor app in `dotnet/`
+> (run guide: [`dotnet/README.md`](dotnet/README.md)). The React app in `src/`
+> is **frozen** — it stays untouched as the reference implementation and as the
+> offline generator for the .NET build (`npm run export:all` produces the tag
+> catalog, replay dataset and parity fixtures). Do not start new UI work here,
+> and do not run `npm run dev` as the operator UI.
+
 Real-time digital twin of the CRM04 / CRM06 4HI reversing cold rolling mill,
 Tata Steel CRM Sahibabad, Narrow Complex.
 
@@ -9,6 +16,17 @@ the screen; the panels exist to explain what the machine in the middle is doing.
 ---
 
 ## How to run
+
+> Run the .NET stack (the delivered UI). The React commands below remain only
+> for the offline generators (`export:*`) and frozen-app verification.
+
+```bash
+cd dotnet
+dotnet run --project src/Crm04.Api    # http://localhost:5200
+dotnet run --project src/Crm04.Web    # http://localhost:5240  <- open this
+```
+
+React (frozen — generator and reference only):
 
 ```bash
 npm install        # once
@@ -21,8 +39,11 @@ Run `npm test` for the physics validation plus mocked gateway and machine-store
 regressions. `npm run check:gateway` checks frame validation and socket lifecycle;
 `npm run check:store` checks feed loss/recovery, source isolation, connection races,
 and fast-stop animation. These checks do not require a plant connection.
-With the dev server running, `npm run check:smoke` also checks browser interactions
-and desktop, tablet, and mobile layouts.
+With the .NET stack running (API on :5200, Web on :5240), `npm run check:smoke`
+checks browser interactions and desktop, tablet, and mobile layouts, and
+`npm run check:layout` asserts the layout contracts across six viewports. Both
+drive the **Blazor** UI, not the frozen React app — point them elsewhere with
+`SMOKE_URL`, and keep their screenshots out of the tree with `SMOKE_OUT`.
 
 Source switches intentionally clear trend buffers and alarm history so simulation
 records cannot be relabeled as LIVE. During a feed outage, the last values become
@@ -35,7 +56,8 @@ rows or partial tag updates; see [the gateway contract](docs/INTEGRATION.md).
 | `npm run build` | Type-check and produce a production build in `dist/` |
 | `npm run validate` | Run the §17 validation tests headlessly against the simulation engine |
 | `npm run check:physics` | Print the pass schedule with forces computed by the force model |
-| `npx tsx scripts/smoke.ts` | Load the running dev server in Chrome/Edge and fail on any console error |
+| `npm run check:smoke` | Drive the Blazor UI on :5240 in Chrome/Edge and fail on any console error |
+| `npm run check:layout` | Assert the layout height and legibility contracts on :5240 across six viewports |
 
 `npm run validate` is the one to run after touching anything in `src/simulation`
 or `src/machine`. It drives the engine at a fixed time step and asserts all ten

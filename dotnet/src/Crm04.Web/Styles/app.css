@@ -1,0 +1,1885 @@
+/*
+  CRM04 DESIGN SYSTEM.
+
+  THIS IS src/index.css FROM THE REACT APP, VERBATIM below the header. Do not restyle it: the
+  whole point of the port is that the Blazor components carry the SAME class names as the JSX did,
+  so the Tata Steel palette, the six-step type ramp and every .panel / .kpi-* / .dashboard-* rule
+  land identically. If something looks wrong, the Razor markup has the wrong classes - not this
+  file.
+
+  Two things are added, and only two:
+    1. @source directives, because Tailwind v4 generates utilities by SCANNING CONTENT. Pointed at
+       .tsx it would emit exactly the utilities the JSX happened to use, and the first Razor
+       component to write a class the JSX never used would silently get nothing.
+    2. Self-hosted @font-face, replacing the two @fontsource npm imports main.tsx did in JS. No
+       CDN: this has to run on an isolated plant network.
+*/
+
+@source '../Components/**/*.razor';
+@source '../Components/**/*.cs';
+@source '../State/**/*.cs';
+@source '../wwwroot/js/**/*.js';
+
+@import 'tailwindcss';
+/* Variable faces, copied from the React app's own node_modules at build time. */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+
+/* Explicit layer order. `layout` comes last so band geometry deliberately
+   outranks utilities — the same precedence the unlayered block used to have by
+   accident, but now greppable and intentional. A Tailwind class in JSX cannot
+   override a `.dashboard-*` rule; edit the rule, not the class list. */
+@layer theme, base, components, utilities, layout;
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tata Steel-inspired palette. Condition and provenance colors remain distinct
+   in both themes — an alarm is never mistaken for a provenance badge. */
+@theme {
+  --color-base-950: #f3f6fa;
+  --color-base-900: #ffffff;
+  --color-base-850: #f1f6fb;
+  --color-base-800: #e6eef6;
+  --color-base-750: #dbe7f2;
+  --color-base-700: #cfdded;
+  --color-base-600: #b3c6dc;
+  --color-base-500: #7e97b3;
+
+  --color-line: #ccd9e8;
+  --color-line-bright: #9db8d2;
+
+  --color-text: #10233d;
+  --color-text-dim: #3d5469;
+  --color-text-faint: #54667c;
+  --color-brand: #0063ad;
+  --color-brand-deep: #004e8a;
+
+  /* Machine condition — vivid on white, words still paired with every hue. */
+  --color-normal: #0063ad;
+  --color-healthy: #0e7f47;
+  --color-warning: #a66e00;
+  --color-alarm: #c13335;
+  --color-trip: #bf2026;
+  --color-inactive: #718398;
+
+  /* Group accents (wayfinding ONLY).
+     These tell you WHICH parameter group you are looking at. They are
+     deliberately muted and low-chroma so they can never be mistaken for a
+     status colour — status stays the most saturated thing on the screen, and
+     is always paired with a word as well as a hue. Never use an accent to
+     signal health. */
+  --accent-thickness: #1f8a5f;
+  --accent-rolling: #2f6db3;
+  --accent-workroll: #a86f24;
+  --accent-tension: #1d8a96;
+  --accent-drive: #5a5fb0;
+  --accent-hydraulic: #8a63c4;
+  --accent-energy: #9c7430;
+  --accent-coil: #3d85a8;
+  --accent-system: #64748b;
+
+  /* Provenance (§7.3) — calm, distinct, never competing with alarm colours */
+  --color-prov-measured: #0e7f47;
+  --color-prov-reference: #4a6076;
+  --color-prov-calculated: #0063ad;
+  --color-prov-simulated: #6f4fc2;
+  --color-prov-estimated: #a66e00;
+  --color-prov-notag: #64748b;
+
+  /* Shape + elevation system — the modern dashboard look. */
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --shadow-card: 0 8px 24px rgb(0 59 113 / 12%);
+  --shadow-pop: 0 16px 40px rgb(0 59 113 / 20%);
+
+  --font-sans: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Mono', ui-monospace, 'Consolas', monospace;
+
+  /* TYPE RAMP — six steps, nothing below 11px. This replaces ~134 arbitrary
+     `text-[Npx]` values spread across 11 distinct sizes. A control desk is
+     read at arm's length: 9px captions were never legible there.
+     `scripts/checkType.ts` fails the build on any new `text-[` in src. */
+  --text-micro: 11px;
+  --text-micro--line-height: 15px;
+  --text-micro--letter-spacing: 0.06em;
+
+  --text-meta: 12px;
+  --text-meta--line-height: 16px;
+
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+
+  --text-value: 20px;
+  --text-value--line-height: 26px;
+  --text-value--letter-spacing: -0.01em;
+  --text-value--font-weight: 600;
+
+  --text-value-lg: 28px;
+  --text-value-lg--line-height: 32px;
+  --text-value-lg--letter-spacing: -0.02em;
+  --text-value-lg--font-weight: 600;
+
+  --text-hero: 44px;
+  --text-hero--line-height: 44px;
+  --text-hero--letter-spacing: -0.03em;
+  --text-hero--font-weight: 650;
+}
+
+/* Control-room dark theme — same semantics, remapped surfaces. Toggled by
+   `documentElement.dark` from the UI store and persisted in localStorage. */
+.dark {
+  --color-base-950: #0a1120;
+  --color-base-900: #101b30;
+  --color-base-850: #0d1626;
+  --color-base-800: #1a2740;
+  --color-base-750: #22314e;
+  --color-base-700: #2c3d5f;
+  --color-base-600: #3d5175;
+  --color-base-500: #5b7194;
+
+  --color-line: #22314e;
+  --color-line-bright: #3b5178;
+
+  --color-text: #e8eef7;
+  --color-text-dim: #a9bad0;
+  --color-text-faint: #7d90a9;
+  --color-brand: #6fb1e8;
+  --color-brand-deep: #b9d6f2;
+
+  --color-normal: #6fb1e8;
+  --color-healthy: #3cb179;
+  --color-warning: #d99a2b;
+  --color-alarm: #e5635f;
+  --color-trip: #f0564f;
+  --color-inactive: #5d7191;
+
+  --color-prov-measured: #3cb179;
+  --color-prov-reference: #8ba5ba;
+  --color-prov-calculated: #6fb1e8;
+  --color-prov-simulated: #a88fd6;
+  --color-prov-estimated: #d99a2b;
+  --color-prov-notag: #7d90a9;
+
+  /* Lifted for the dark ground — same hues, enough luminance to read as an
+     edge against #101b30 without becoming vivid enough to read as status. */
+  --accent-thickness: #4fae83;
+  --accent-rolling: #6b9fd4;
+  --accent-workroll: #c9954f;
+  --accent-tension: #4fb3bd;
+  --accent-drive: #8f93c4;
+  --accent-hydraulic: #ab8bd4;
+  --accent-energy: #c29a63;
+  --accent-coil: #74a8c4;
+  --accent-system: #94a3b8;
+
+  --shadow-card: 0 4px 18px rgb(0 0 0 / 35%);
+  --shadow-pop: 0 16px 40px rgb(0 0 0 / 50%);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-base-950);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  :where(button, input, select, textarea, a):focus-visible {
+    outline: 2px solid var(--color-normal);
+    outline-offset: 2px;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  button, input, select {
+    border-radius: 6px;
+  }
+
+  button {
+    min-height: 32px;
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 120ms ease;
+  }
+
+  button:not(:disabled):hover {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-normal) 12%, transparent);
+  }
+
+  button:not(:disabled):active {
+    transform: translateY(0.5px);
+  }
+
+  /* Numeric readouts are tabular so digits do not jitter as values change —
+     essential on a screen that updates several times a second. */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-base-900);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-base-600);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-base-500);
+  }
+}
+
+@layer components {
+  .panel {
+    background: var(--color-base-900);
+    border: 1px solid var(--color-line);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* A FIXED box. Was `padding: 12px 16px` with no height, so an ordinary panel
+     measured ~39px but LiveChart's — which carries the `.segmented` control in
+     its right slot — measured ~63px. That invisible 24px variable is why the
+     old `height: 600px` on the console band looked arbitrary. Now constant, so
+     the band height below can be derived rather than guessed. */
+  .panel-title {
+    min-height: var(--panel-title-h);
+    padding: 0 18px;
+    font-size: var(--text-meta);
+    line-height: var(--text-meta--line-height);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-brand-deep);
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-base-850);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+
+  .panel-body {
+    padding: 16px 18px;
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .label {
+    font-size: var(--text-meta);
+    line-height: var(--text-meta--line-height);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+
+  /* Alarm attention. Slow and steady — a control room runs for 12 hours and a
+     fast flash becomes unbearable. */
+  @keyframes alarm-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+  .alarm-pulse {
+    animation: alarm-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes stale-sweep {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 28px 0;
+    }
+  }
+  .stale-hatch {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgba(224, 82, 79, 0.14) 0 6px,
+      transparent 6px 14px
+    );
+    animation: stale-sweep 1.4s linear infinite;
+  }
+
+  /* Segmented control — trend windows, mode switchers. */
+  .segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid var(--color-line);
+    background: var(--color-base-950);
+    border-radius: 999px;
+    padding: 3px;
+  }
+  /* 32px (not 30) so the whole control measures 40px and clears the 46px
+     `.panel-title` box it sits inside. */
+  .segmented > button {
+    border: 0;
+    background: transparent;
+    border-radius: 999px;
+    min-height: 32px;
+    padding: 4px 12px;
+    font-size: var(--text-meta);
+    font-weight: 600;
+    color: var(--color-text-dim);
+    box-shadow: none;
+  }
+  .segmented > button:hover {
+    box-shadow: none;
+    color: var(--color-text);
+    background: var(--color-base-800);
+  }
+  .segmented > button[aria-pressed='true'] {
+    background: var(--color-normal);
+    color: #fff;
+    box-shadow: 0 2px 8px rgb(0 90 156 / 30%);
+  }
+
+  /* TREND CHART BOXES — both are fixed-height, and that is the whole point.
+     recharts' ResponsiveContainer is height="100%", which resolves to 0 unless
+     its parent has a definite height. Previously the plot was `flex-1`, so its
+     height was a flex *remainder* that resolved only via the flexbox
+     definite-cross-size rule — any ancestor gaining `height:auto` broke the
+     chart silently. Now the plot states its height and the band is derived
+     from it, so the band can never be too short for the chart. */
+  .live-trend-legend {
+    flex: 0 0 auto;
+    height: var(--trend-legend-h);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .live-trend-plot {
+    flex: 0 0 auto;
+    height: var(--trend-plot-h);
+    min-height: 0;
+    padding: 0 8px var(--trend-plot-pad);
+  }
+
+  /* Trends page legend — two rows of channels at the 8-channel cap, then it
+     scrolls. Fixed so the plot's height stays derivable. */
+  .trend-legend {
+    flex: 0 0 auto;
+    height: 52px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* KPI TIERS — the hero cards carry a status tint so an alarming value is
+     recognisable before the number is read. */
+  .kpi-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    min-height: var(--kpi-card-h);
+    padding: 16px;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .kpi-card-hero {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-width: 0;
+    min-height: var(--kpi-hero-h);
+    padding: 20px;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    border-left: 4px solid var(--kpi-tint, var(--color-line));
+    /* The wash is horizontal and anchored to the tinted edge, so the colour
+       reads as belonging to that border rather than as a stray gradient. 7% was
+       invisible against the near-white panel; 14% fading over 45% carries. */
+    background:
+      linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--kpi-tint, transparent) 14%, transparent),
+        transparent 45%
+      ),
+      var(--color-base-900);
+  }
+
+  .kpi-card .label,
+  .kpi-card-hero .label {
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .kpi-card .kpi-caption {
+    flex-wrap: wrap;
+  }
+
+  .kpi-sparkline {
+    opacity: 0.85;
+  }
+
+  /* ── KPI TILE ────────────────────────────────────────────────────────────
+     Compact by intent. The group accent is a 3px left edge rather than a fill
+     so it reads as a category marker and never competes with the status dot,
+     which is the only saturated colour in the tile.
+     Fixed min-height + bottom-pinned sparkline keep every tile in a group
+     the same height whether or not it carries SP/Δ/spark rows. */
+  .kpi-tile {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    min-width: 0;
+    min-height: 172px;
+    height: 100%;
+    padding: 12px 14px;
+    border-radius: var(--radius-card);
+    border-left: 3px solid var(--kpi-accent, var(--color-line));
+    box-shadow: var(--shadow-card);
+  }
+
+  .kpi-group-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--group-accent, var(--color-text-faint));
+    padding-left: 9px;
+    border-left: 3px solid var(--group-accent, var(--color-line));
+    margin-bottom: 8px;
+  }
+
+  /* auto-FIT so a two-tile group (TENSION) stretches its tiles across the
+     full width instead of leaving empty tracks — no dead whitespace. Every
+     tile keeps the same fixed min-height, so groups stay even. */
+  .kpi-group-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  }
+
+  /* ── PARAMETER GROUP ─────────────────────────────────────────────────── */
+  .param-group {
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .param-group-title {
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--group-accent, var(--color-brand-deep));
+    background: var(--color-base-850);
+    border-bottom: 1px solid var(--color-line);
+    border-left: 3px solid var(--group-accent, var(--color-line));
+    padding: 9px 14px;
+  }
+
+  /* ── OPERATING CONTEXT ───────────────────────────────────────────────── */
+  .operating-context {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+
+  .operating-context > div + div {
+    border-left: 1px solid var(--color-line);
+  }
+
+  .twin-launch {
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* ── DIAGNOSTICS DIALOG ──────────────────────────────────────────────── */
+  .diagnostics-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgb(10 17 32 / 45%);
+    backdrop-filter: blur(2px);
+  }
+
+  .diagnostics-panel {
+    position: fixed;
+    z-index: 61;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(1400px, calc(100vw - 48px));
+    height: min(880px, calc(100dvh - 64px));
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--color-base-900);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-pop);
+    overflow: hidden;
+  }
+
+  /* TagInventory / PlantConfig / ValidationPanel were written as full pages
+     carrying `.dashboard-page-grid` (min-height 620px) and their own two-column
+     grids. Inside the dialog the body is the scroll container instead, and that
+     min-height would force a scrollbar on every section. */
+  .diagnostics-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 16px;
+  }
+
+  .diagnostics-body .dashboard-page-grid {
+    min-height: 0;
+    height: auto;
+  }
+}
+
+@layer layout {
+  /* ─────────────────────────────────────────────────────────────────────────
+     HEIGHT CONTRACT
+
+     Exactly one length here is a free choice: --trend-plot-h. Every band height
+     is derived from it, so a density change never invalidates the layout.
+
+     Chain (≥1280px) — every link resolves a definite height, no
+     percentage-of-auto anywhere:
+
+       .dashboard-overview   calc(46 + 96 + plot)            DEFINITE (px + vh)
+       └ .dashboard-trends   grid item, align stretch          = row height
+         └ .panel.h-full     height:100% of a definite parent  DEFINITE
+           ├ .panel-title    min-height:46px, flex:0 0 auto    DEFINITE 46
+           └ .panel-body     flex:1 1 auto, min-height:0       = 100% − 46
+             ├ .live-trend-legend  height:96px, flex:0 0 auto  DEFINITE 96
+             └ .live-trend-plot    height:var(…), flex:0 0 auto DEFINITE
+               └ ResponsiveContainer height="100%"           → plot − 8 padding
+     ───────────────────────────────────────────────────────────────────────── */
+  :root {
+    /* Component heights — border-box (Tailwind preflight sets box-sizing). */
+    --panel-title-h: 46px; /* 16 line + 2×15 pad + 1 border; clears the 40px .segmented */
+    --trend-legend-h: 96px; /* 12 + 32 + 6 + 32 + 12 + 1 + 1 — 9 signals wrap to 2 rows */
+    --trend-plot-pad: 8px;
+
+    /* THE ONE FREE CHOICE. 42vh holds the chart at ~446px on 1080p — parity
+       with the 438px it measured before — while the cards around it grow. */
+    --trend-plot-h: clamp(360px, 42vh, 580px);
+
+    --band-gap: 14px;
+    --kpi-hero-h: 188px;
+    --kpi-card-h: 112px;
+  }
+
+  /* The document scrolls; only data-heavy panels have their own bounded scroll. */
+  .dashboard-shell {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .dashboard-content {
+    flex: none;
+    overflow: visible;
+    gap: 16px;
+    padding: 22px 28px 28px;
+    width: 100%;
+    max-width: 2200px;
+    margin-inline: auto;
+  }
+
+  /* Explicit opt-in, applied to the TagInventory / PlantConfig / ValidationPanel
+     roots. Replaces a `.dashboard-content > .grid:not(…):not(…)` chain that
+     silently made *any* new direct grid child 620px tall. */
+  .dashboard-page-grid {
+    min-height: 620px;
+  }
+
+  /* ── BAND 1 ── A flex column, deliberately NOT a grid, so neither
+     .dashboard-page-grid nor the ≤1279px "collapse every grid to one column"
+     rule can reach the KPI grids nested inside it. */
+  .dashboard-kpis {
+    display: flex;
+    flex-direction: column;
+    gap: var(--band-gap);
+  }
+
+  /* Groups tile three-across on a wide screen, so the six groups pack into
+     two dense rows instead of three airy ones. NOT a `.grid` class and not
+     a direct `.dashboard-content` child issue: the nested group grids are
+     shielded from the responsive collapse rules by this wrapper. */
+  .kpi-ribbon {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+    gap: var(--band-gap) 22px;
+    align-content: start;
+    align-items: start;
+  }
+
+  /* DASHBOARD — parameters left, status/alarms right. The right rail is
+     narrower than the parameter field because status is scanned, not read. */
+  .dashboard-main {
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: var(--band-gap);
+    min-height: 0;
+  }
+
+  /* Parameter groups tile freely — there are eight of them and they differ a
+     lot in row count, so a fixed column count would leave ragged holes. */
+  .param-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: var(--band-gap);
+    align-content: start;
+  }
+
+  .dashboard-lower {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: var(--band-gap);
+  }
+
+  /* TRENDS — browser rail left, plot right.
+     Same inverted contract as the dashboard console band used to have: the
+     PLOT states its height and the band is DERIVED from it, so the band can
+     never be too short for the chart. recharts' ResponsiveContainer is
+     height:100% and resolves to zero against an auto-height parent.
+
+     This page carries no KPI ribbon, so the plot gets the viewport minus the
+     header, page title and padding — far more room than the dashboard gave it.
+     The parameter rail is the same height and scrolls internally. */
+  .dashboard-trendspage {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr);
+    gap: var(--band-gap);
+    --trend-page-plot-h: clamp(320px, calc(100dvh - 400px), 940px);
+    height: calc(var(--panel-title-h) + 52px + var(--trend-page-plot-h));
+    min-height: 0;
+  }
+
+  .trend-plot {
+    flex: 0 0 auto;
+    height: var(--trend-page-plot-h);
+    min-height: 0;
+  }
+
+  @media (max-width: 1023px) {
+    .dashboard-trendspage {
+      grid-template-columns: minmax(0, 1fr);
+      /* Stacked: the browser rail sits above the plot, so the band is the sum
+         of both rather than the height of one. */
+      height: auto;
+    }
+
+    .dashboard-trendspage > .panel:first-child {
+      max-height: 320px;
+    }
+  }
+
+  /* ── BAND 2 ── The console. The only hard-bounded band, and its height is
+     computed from the chart rather than chosen. Without the bound the tallest
+     rail (mill health, ~900px of content) stretches the chart into a giant
+     empty-looking plot. */
+  .dashboard-overview {
+    grid-template-columns: 280px minmax(0, 1fr) 340px;
+    gap: var(--band-gap);
+    height: calc(var(--panel-title-h) + var(--trend-legend-h) + var(--trend-plot-h));
+    min-height: 0;
+  }
+
+  .dashboard-trends {
+    min-height: 0;
+  }
+
+  /* A rail that itself contains a scroller: alarms pinned, the rest scrolls.
+     Must NOT set overflow — the nested .dashboard-sidebar is the scroller. */
+  .dashboard-rail {
+    gap: var(--band-gap);
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .dashboard-sidebar {
+    gap: var(--band-gap);
+    align-content: start;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    padding-bottom: 2px;
+  }
+
+  /* ── BAND 3 ── Bounded for scan consistency, not correctness: it holds no
+     ResponsiveContainer, so a wrong value here is ugly, never broken.
+     376px floor = title 46 + thead 37 + 7 rows × 35 + footer 44 = 372, +4. */
+  .dashboard-bottom {
+    height: clamp(376px, 36vh, 496px);
+    gap: var(--band-gap);
+  }
+
+  .dashboard-pass {
+    gap: var(--band-gap);
+  }
+
+  /* Dedicated 3D page — canvas left, controls dock right. Out of scope for the
+     redesign; it inherits --panel-title-h and must look unchanged. */
+  .dashboard-twinpage {
+    gap: var(--band-gap);
+    grid-template-columns: minmax(0, 1fr) 340px;
+    min-height: 640px;
+  }
+
+  .dashboard-twin {
+    min-height: 560px;
+  }
+}
+
+/* Forms read as light controls with a clear brand focus. */
+input[type='search'],
+input[type='text'],
+select {
+  color-scheme: light;
+}
+.dark input[type='search'],
+.dark input[type='text'],
+.dark select {
+  color-scheme: dark;
+}
+
+input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.brand-header {
+  border-top: 4px solid var(--color-brand);
+  box-shadow: 0 2px 12px rgb(23 43 77 / 3%);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(8px);
+}
+
+.brand-wordmark {
+  color: var(--color-brand);
+  font-size: 27px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -1.2px;
+  white-space: nowrap;
+}
+
+/* `a` as well as `button`: the nav became react-router NavLinks, which render
+   anchors and set aria-current="page" themselves. */
+.workspace-nav button,
+.workspace-nav a {
+  position: relative;
+  min-height: 44px;
+}
+
+.workspace-nav button[aria-current='page']::after,
+.workspace-nav a[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  height: 3px;
+  inset: auto 12px 2px;
+  background: var(--color-brand);
+  border-radius: 3px 3px 0 0;
+}
+
+/* `.kpi-card` / `.kpi-card-hero` now live in @layer components.
+   `.kpi-wall` / `.kpi-wall-card` deleted — leftovers from an earlier layout,
+   matched by no component. */
+
+.skip-link {
+  position: fixed;
+  top: -60px;
+  left: 16px;
+  z-index: 100;
+  background: white;
+  padding: 12px;
+  color: var(--color-brand);
+}
+.skip-link:focus { top: 12px; }
+
+/* Blazor's reload bar. Hidden until blazor.web.js shows it inline after an
+   unhandled circuit error — without this rule it is a plain visible div. */
+#blazor-error-ui {
+  display: none;
+  position: fixed;
+  z-index: 100;
+  inset: auto 0 0 0;
+  padding: 10px 16px;
+  background: #fff7e6;
+  border-top: 2px solid var(--color-warning);
+  color: var(--color-text);
+  font-size: var(--text-meta);
+}
+
+.panel-body tbody tr:hover { background: var(--color-base-800); }
+.panel-body th { padding-block: 10px; }
+.panel-body td { padding-block: 7px; }
+
+.twin-viewport {
+  container-type: inline-size;
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgb(0 59 113 / 7%);
+}
+
+/* ── 3D TWIN VIEWPORT ───────────────────────────────────────────────────
+   The canvas area is a flex column: command strips on top, the stage fills
+   the rest, the inspector footer pins to the bottom. The stage MUST own a
+   definite height (flex-1 + min-height inside a min-h-560 parent) — with an
+   auto-height parent the canvas measures 0px and the scene is a blank box. */
+.twin-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 420px;
+  overflow: hidden;
+  background: #e9eff5;
+}
+
+.twin-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.twin-labels {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.twin-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.label-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgb(255 255 255 / 92%);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.label-chip .label-title {
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--color-brand-deep);
+}
+
+.label-chip.label-entry {
+  border-color: color-mix(in srgb, var(--color-normal) 55%, transparent);
+}
+
+.label-chip.label-exit {
+  border-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
+}
+
+.twin-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text-dim);
+  background: var(--color-base-900);
+}
+
+.twin-cmd:disabled {
+  opacity: 0.75;
+}
+
+.twin-cmd-trip {
+  border-color: color-mix(in srgb, var(--color-trip) 60%, transparent);
+  color: var(--color-trip);
+}
+
+.twin-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--color-line);
+  border-radius: 9px;
+  padding: 6px 10px;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text-dim);
+  background: var(--color-base-900);
+  min-height: 32px;
+}
+
+.twin-tool-on {
+  border-color: color-mix(in srgb, var(--color-brand) 55%, transparent);
+  color: var(--color-brand-deep);
+  background: color-mix(in srgb, var(--color-brand) 10%, transparent);
+}
+
+.twin-error,
+.twin-stall {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  box-shadow: var(--shadow-pop);
+}
+
+.twin-error {
+  border: 1px solid color-mix(in srgb, var(--color-alarm) 55%, transparent);
+  background: rgb(255 255 255 / 96%);
+  color: var(--color-alarm);
+}
+
+.twin-stall {
+  border: 1px solid color-mix(in srgb, var(--color-warning) 55%, transparent);
+  background: rgb(255 255 255 / 94%);
+  color: var(--color-warning);
+}
+
+/* ── TREND CHART ────────────────────────────────────────────────────────
+   Inline-SVG multi-pen plot. Fixed heights so the panel body keeps a
+   definite size no matter how many channels are overlaid. */
+.chart {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  /* Definite height: the wrap + x-axis below divide exactly this, so the SVG
+     never resolves height:100% against auto and collapses into a strip. */
+  height: 100%;
+}
+
+.chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 320px;
+  padding: 24px;
+  text-align: center;
+  font-size: var(--text-meta);
+  color: var(--color-text-faint);
+}
+
+.chart-empty-sub {
+  font-size: var(--text-micro);
+}
+
+.chart-svg-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  /* No min-height: the wrap divides .trend-plot with the x-axis row. A floor
+     here reintroduces the overflow the band budget was built to prevent. */
+  min-height: 0;
+}
+
+.chart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.chart-svg .grid {
+  stroke: var(--color-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-svg .axis {
+  stroke: var(--color-line-bright);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-svg .limit {
+  stroke-dasharray: 6 5;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-svg .limit-warning { stroke: var(--color-warning); opacity: 0.75; }
+.chart-svg .limit-alarm { stroke: var(--color-alarm); opacity: 0.75; }
+.chart-svg .limit-trip { stroke: var(--color-trip); opacity: 0.9; }
+
+.chart-xaxis {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.chart-hover-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-line-bright);
+  pointer-events: none;
+  display: none;
+}
+
+.chart-hover-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  display: none;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 5;
+  min-width: 190px;
+  max-width: 260px;
+  background: var(--color-base-900);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  padding: 10px 12px;
+  font-size: var(--text-meta);
+  pointer-events: none;
+  display: none;
+}
+
+.chart-tooltip-time {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  color: var(--color-text);
+  margin-bottom: 6px;
+}
+
+.chart-tooltip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-block: 1px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── PREMIUM DASHBOARD LAYER (visual-executive refresh) ─────────────────
+   New classes only — existing .panel / .kpi-tile / .param-group contracts
+   are untouched so layout probes keep passing. These add the hero strip,
+   icon chips, schematic and hover depth. */
+
+@layer components {
+  /* KPI tile: lift + depth on hover, gradient wash already on hero cards */
+  .kpi-tile {
+    position: relative;
+    transition: transform 160ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  }
+  .kpi-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-pop);
+    border-color: var(--color-line-bright);
+  }
+  .kpi-tile-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .kpi-icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    flex: 0 0 auto;
+    background: color-mix(in srgb, var(--kpi-accent, var(--color-brand)) 12%, transparent);
+    color: var(--kpi-accent, var(--color-brand));
+  }
+  .kpi-spark {
+    margin-top: auto;
+    border-top: 1px dashed var(--color-line);
+    padding-top: 6px;
+    min-height: 33px;
+  }
+
+  /* Hero strip — status + schematic + load */
+  /* PROPORTIONAL TRACKS, NOT FIXED RAILS. The old `300px minmax(0,1fr) 340px`
+     handed the centre column every spare pixel — 1196px at 1920, ~1560px at 2560
+     — and because the schematic is width:100% over a fixed viewBox, that width
+     became its HEIGHT (395px, then 491px). `align-items: stretch` passed the
+     inflated height on to the side cards, which ended up 62% and 38% empty while
+     the drawing merely got bigger. Ratios keep the diagram from monopolising the
+     band; the floors stop the side cards collapsing at 1280px, the narrowest
+     width this three-column rule still runs at. */
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.9fr) minmax(0, 2fr) minmax(360px, 1fr);
+    gap: var(--band-gap);
+    align-items: stretch;
+  }
+  .hero-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 16px 18px;
+    min-width: 0;
+  }
+  .hero-card::after {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: var(--hero-accent, var(--color-brand));
+    opacity: 0.9;
+  }
+  .hero-state-glow {
+    position: absolute;
+    right: -60px;
+    top: -60px;
+    width: 200px;
+    height: 200px;
+    border-radius: 999px;
+    background: radial-gradient(circle, color-mix(in srgb, var(--hero-accent, var(--color-brand)) 22%, transparent), transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Mill line schematic */
+
+  /* THIS DRAWING'S HEIGHT IS ITS WIDTH. `.mill-schematic` below is width:100%
+     over a fixed `viewBox="0 0 680 232"`, so every extra pixel of column width
+     buys ~0.34px of height and nothing else — no more detail, just a larger
+     picture. That is the whole reason the band stood 571px tall at 1920.
+
+     Cap the WRAPPER rather than the <svg>: this block also carries the
+     Entry/Reduction/Exit row above the diagram and the POR/ETR/MILL/DTR chips
+     and control-parameter row below it. Capping here keeps all of them centred
+     over the drawing as one unit; capping the svg alone would strand those rows
+     at full width, visually detached from the thing they describe. */
+  .mill-line-block {
+    max-width: 760px;
+    margin-inline: auto;
+  }
+
+  .mill-schematic {
+    width: 100%;
+    height: 100%;
+    min-height: 184px;
+  }
+  @keyframes strip-flow {
+    to { stroke-dashoffset: -28; }
+  }
+  .strip-flow {
+    stroke-dasharray: 10 18;
+    animation: strip-flow 1.1s linear infinite;
+  }
+  .strip-flow-rev {
+    stroke-dasharray: 10 18;
+    animation: strip-flow 1.1s linear infinite reverse;
+  }
+  @keyframes coil-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Operating context cells with icon */
+  .ctx-cell {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+    padding: 10px 14px;
+  }
+  .ctx-ico {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: var(--color-base-800);
+    color: var(--color-brand-deep);
+    flex: 0 0 auto;
+  }
+  .dark .ctx-ico {
+    color: var(--color-brand);
+  }
+
+  /* Parameter group polish */
+  .param-group {
+    transition: box-shadow 200ms ease, border-color 200ms ease;
+  }
+  .param-group:hover {
+    border-color: var(--color-line-bright);
+    box-shadow: var(--shadow-pop);
+  }
+
+  /* Status board verdict banner */
+  .verdict-good {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-healthy) 14%, transparent), transparent 60%), var(--color-base-850);
+  }
+  .verdict-bad {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-alarm) 16%, transparent), transparent 60%), var(--color-base-850);
+  }
+
+  /* Twin launch gradient CTA */
+  .twin-launch {
+    background:
+      linear-gradient(120deg, color-mix(in srgb, var(--color-brand) 12%, transparent), transparent 55%),
+      var(--color-base-900);
+    transition: transform 160ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  }
+  .twin-launch:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-pop);
+  }
+}
+
+/* ── MODERN GLASS COMMAND-CENTER (light-first) ──────────────────────────
+   Glassmorphism tuned for a bright control room: translucent blurred cards,
+   top inner-highlight, neon status glow. Dark theme remaps the same classes.
+   Probe contracts untouched — classes only, no geometry changes. */
+@layer components {
+  .panel,
+  .kpi-tile,
+  .hero-card,
+  .param-group,
+  .operating-context {
+    background: color-mix(in srgb, var(--color-base-900) 76%, transparent);
+    backdrop-filter: blur(14px) saturate(1.3);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    border-color: color-mix(in srgb, var(--color-line-bright) 60%, transparent);
+    box-shadow:
+      var(--shadow-card),
+      inset 0 1px 0 rgb(255 255 255 / 60%);
+  }
+  .dark .panel,
+  .dark .kpi-tile,
+  .dark .hero-card,
+  .dark .param-group,
+  .dark .operating-context {
+    background: color-mix(in srgb, var(--color-base-900) 72%, transparent);
+    box-shadow:
+      var(--shadow-card),
+      inset 0 1px 0 rgb(255 255 255 / 7%);
+  }
+  .panel-title,
+  .param-group-title {
+    background: color-mix(in srgb, var(--color-base-850) 70%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  /* Neon status dot — colour AND word still paired in the pill. */
+  .dot-glow {
+    box-shadow: 0 0 8px 1px currentColor;
+  }
+
+  /* Compact status pill for KPI tiles. */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    border: 1px solid;
+    padding: 2px 9px 2px 7px;
+    font-size: var(--text-micro);
+    line-height: 16px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+  .status-pill-trip { border-color: color-mix(in srgb, var(--color-trip) 55%, transparent); background: color-mix(in srgb, var(--color-trip) 12%, transparent); }
+  .status-pill-alarm { border-color: color-mix(in srgb, var(--color-alarm) 50%, transparent); background: color-mix(in srgb, var(--color-alarm) 10%, transparent); }
+  .status-pill-warning { border-color: color-mix(in srgb, var(--color-warning) 50%, transparent); background: color-mix(in srgb, var(--color-warning) 12%, transparent); }
+  .status-pill-normal { border-color: color-mix(in srgb, var(--color-healthy) 45%, transparent); background: color-mix(in srgb, var(--color-healthy) 10%, transparent); }
+  .status-pill-missing { border-color: var(--color-line); background: transparent; }
+
+  /* Duotone icon chip + param count badge + nav sliding pill. */
+  .kpi-icon {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--kpi-accent, var(--color-brand)) 22%, transparent), transparent 70%),
+      color-mix(in srgb, var(--kpi-accent, var(--color-brand)) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kpi-accent, var(--color-brand)) 30%, transparent);
+  }
+  .param-count {
+    margin-left: auto;
+    font-size: var(--text-micro);
+    font-weight: 700;
+    color: var(--color-text-faint);
+    background: var(--color-base-800);
+    border: 1px solid var(--color-line);
+    border-radius: 999px;
+    padding: 0 8px;
+    line-height: 18px;
+  }
+  .nav-pill {
+    position: absolute;
+    inset: 2px 4px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--color-brand) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-brand) 30%, transparent);
+  }
+  .workspace-nav button,
+  .workspace-nav a {
+    position: relative;
+    z-index: 0;
+  }
+  .workspace-nav button > *:not(.nav-pill),
+  .workspace-nav a > *:not(.nav-pill) {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Mode banner glow. */
+  .mode-glow-sim {
+    box-shadow: 0 0 16px rgb(112 80 162 / 35%), inset 0 1px 0 rgb(255 255 255 / 40%);
+  }
+  .mode-glow-live {
+    box-shadow: 0 0 16px rgb(24 116 71 / 35%), inset 0 1px 0 rgb(255 255 255 / 40%);
+  }
+
+  /* Live schematic glow while rolling. */
+  .schematic-live {
+    filter: drop-shadow(0 0 12px rgb(0 90 156 / 30%));
+  }
+  .dark .schematic-live {
+    filter: drop-shadow(0 0 16px rgb(111 177 232 / 35%));
+  }
+
+  /* Current pass row — gradient highlight + glow bar. */
+  .pass-current {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--color-normal) 16%, transparent), transparent 65%),
+      transparent;
+    box-shadow: inset 3px 0 0 var(--color-normal), 0 0 14px rgb(0 90 156 / 18%);
+  }
+
+  /* Alarm severity glow wash. */
+  .sev-glow-trip { box-shadow: inset 3px 0 0 var(--color-trip), 0 0 18px rgb(191 32 38 / 20%); }
+  .sev-glow-alarm { box-shadow: inset 3px 0 0 var(--color-alarm), 0 0 16px rgb(193 51 53 / 18%); }
+  .sev-glow-warning { box-shadow: inset 3px 0 0 var(--color-warning), 0 0 14px rgb(151 96 0 / 16%); }
+  .sev-glow-info { box-shadow: inset 3px 0 0 var(--color-normal); }
+
+  /* Status board row hover. */
+  .status-row {
+    transition: background-color 140ms ease;
+  }
+  .status-row:hover {
+    background: var(--color-base-800);
+  }
+
+  /* Value-change flash wash. */
+  @keyframes num-flash {
+    0% { background: color-mix(in srgb, var(--color-normal) 22%, transparent); }
+    100% { background: transparent; }
+  }
+}
+
+@layer base {
+  /* Light-first ambient mesh; dark remaps below. Paints above the base
+     background, below content; pointer-transparent. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1100px 480px at 12% -6%, rgb(0 99 173 / 20%), transparent 60%),
+      radial-gradient(900px 520px at 92% -2%, rgb(111 79 194 / 13%), transparent 60%),
+      radial-gradient(700px 420px at 55% 110%, rgb(29 138 150 / 8%), transparent 60%),
+      linear-gradient(180deg, #f7fafd 0%, #dfe9f4 100%);
+  }
+  .dark body::before {
+    background:
+      radial-gradient(1100px 480px at 12% -6%, rgb(111 177 232 / 12%), transparent 60%),
+      radial-gradient(900px 520px at 92% -2%, rgb(168 143 214 / 10%), transparent 60%),
+      linear-gradient(180deg, #0c1526 0%, #0a1120 100%);
+  }
+}
+
+@media (max-width: 1279px) {
+  .hero-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The @container blocks that targeted `.twin-disclosure` / `.twin-commands` /
+   `.twin-status` are gone — those classes appear in no component. `.twin-viewport`
+   keeps `container-type` for future use by the 3D page. */
+
+/* The `.dashboard-kpis > div` column rules are gone. The count now lives on the
+   grid elements themselves in KPIBar.tsx, where it is visible at the point of
+   use — the old descendant selector assumed exactly one child grid and could
+   not express the hero (3) + secondary (6) split. */
+
+@media (max-width: 1279px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  .dashboard-shell {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .dashboard-content {
+    flex: none;
+    overflow: visible;
+  }
+
+  /* Stacked layout: the console band is unbounded here (the
+     `.dashboard-content > .grid { height: auto }` rule below covers
+     .dashboard-overview), so the plot height stands alone rather than being a
+     component of a band height. One variable, every breakpoint. */
+  :root {
+    --trend-plot-h: clamp(300px, 44vh, 440px);
+  }
+
+  .dashboard-content > .grid,
+  .dashboard-rail,
+  .dashboard-sidebar,
+  .dashboard-pass > div {
+    height: auto;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    flex: none;
+    overflow: visible;
+  }
+
+  .dashboard-twinpage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-content > .grid > div {
+    min-width: 0;
+  }
+
+  .dashboard-content > .grid > .flex {
+    overflow: visible;
+  }
+
+  .dashboard-content .panel {
+    flex-shrink: 0;
+  }
+
+  .dashboard-twin {
+    grid-row: 1;
+    height: 680px;
+  }
+
+  .dashboard-bottom > .panel {
+    height: 366px;
+  }
+  /* `.live-trend-plot` needs no override here — it reads --trend-plot-h, which
+     the :root block above already retuned for the stacked layout. */
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  /* Descendant, not child: the right rail's sidebar is now nested inside
+     `.dashboard-rail` (alarms pinned above it). */
+  .dashboard-content > .dashboard-bottom,
+  .dashboard-overview .dashboard-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .dashboard-content { padding: 16px 12px; gap: 12px; }
+  .dashboard-twin { height: 760px; }
+  .brand-wordmark { font-size: 23px; }
+  .workspace-nav { gap: 0; }
+  .workspace-nav button,
+  .workspace-nav a { padding-inline: 10px; font-size: var(--text-micro); }
+  button { min-height: 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alarm-pulse,
+  .stale-hatch,
+  .strip-flow,
+  .strip-flow-rev,
+  .num-flash {
+    animation: none;
+  }
+  /* Radix ships no animation of its own, but any we attach to portalled
+     content lives outside the tree the rules below reach. */
+  [data-radix-popper-content-wrapper] * {
+    animation: none !important;
+  }
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
+
+/* ── LIGHT-ONLY VIBRANT FRESH ───────────────────────────────────────────
+   Every rule is prefixed with `:where(html:not(.dark))`, which contributes
+   zero specificity — so each `.dark …` rule (0,2,0) still wins in dark mode
+   and the dark theme renders byte-identical to before. Light gets solid-er
+   glass, saturated pills/chips, brand-tinted elevation and a richer mesh. */
+@layer components {
+  :where(html:not(.dark)) .panel,
+  :where(html:not(.dark)) .kpi-tile,
+  :where(html:not(.dark)) .hero-card,
+  :where(html:not(.dark)) .param-group,
+  :where(html:not(.dark)) .operating-context {
+    background: color-mix(in srgb, var(--color-base-900) 88%, transparent);
+    border-color: color-mix(in srgb, var(--color-line-bright) 75%, transparent);
+    box-shadow:
+      0 10px 28px rgb(0 59 113 / 13%),
+      inset 0 1px 0 rgb(255 255 255 / 90%);
+  }
+  :where(html:not(.dark)) .panel-title,
+  :where(html:not(.dark)) .param-group-title {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--color-brand) 10%, transparent), transparent 55%),
+      color-mix(in srgb, var(--color-base-850) 82%, transparent);
+  }
+  :where(html:not(.dark)) .kpi-tile:hover,
+  :where(html:not(.dark)) .param-group:hover {
+    border-color: color-mix(in srgb, var(--color-brand) 40%, var(--color-line-bright));
+    box-shadow:
+      0 16px 36px rgb(0 59 113 / 18%),
+      inset 0 1px 0 rgb(255 255 255 / 90%);
+  }
+
+  /* Status pills + glow dots go vivid on white. */
+  :where(html:not(.dark)) .status-pill-trip { background: color-mix(in srgb, var(--color-trip) 16%, transparent); }
+  :where(html:not(.dark)) .status-pill-alarm { background: color-mix(in srgb, var(--color-alarm) 16%, transparent); }
+  :where(html:not(.dark)) .status-pill-warning { background: color-mix(in srgb, var(--color-warning) 20%, transparent); }
+  :where(html:not(.dark)) .status-pill-normal { background: color-mix(in srgb, var(--color-healthy) 16%, transparent); }
+  :where(html:not(.dark)) .dot-glow {
+    box-shadow: 0 0 10px 2px currentColor;
+  }
+
+  /* Icon chips + count badges pop. */
+  :where(html:not(.dark)) .kpi-icon {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--kpi-accent, var(--color-brand)) 36%, transparent), transparent 70%),
+      color-mix(in srgb, var(--kpi-accent, var(--color-brand)) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kpi-accent, var(--color-brand)) 45%, transparent);
+  }
+  :where(html:not(.dark)) .ctx-ico {
+    background: color-mix(in srgb, var(--color-brand) 12%, var(--color-base-800));
+    color: var(--color-brand-deep);
+  }
+  :where(html:not(.dark)) .param-count {
+    background: color-mix(in srgb, var(--color-brand) 10%, var(--color-base-800));
+    border-color: color-mix(in srgb, var(--color-brand) 30%, transparent);
+    color: var(--color-brand-deep);
+  }
+
+  /* Header + nav pop. */
+  :where(html:not(.dark)) .brand-header {
+    box-shadow: 0 4px 20px rgb(0 59 113 / 12%);
+  }
+  :where(html:not(.dark)) .nav-pill {
+    background: color-mix(in srgb, var(--color-brand) 16%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-brand) 40%, transparent);
+  }
+  :where(html:not(.dark)) .mode-glow-sim {
+    box-shadow: 0 0 20px rgb(111 79 194 / 45%), inset 0 1px 0 rgb(255 255 255 / 60%);
+  }
+  :where(html:not(.dark)) .mode-glow-live {
+    box-shadow: 0 0 20px rgb(14 127 71 / 45%), inset 0 1px 0 rgb(255 255 255 / 60%);
+  }
+
+  /* Tables + verdicts + schematic carry more colour in light. */
+  :where(html:not(.dark)) .panel-body thead {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--color-brand) 9%, transparent), transparent 60%),
+      color-mix(in srgb, var(--color-base-850) 85%, transparent);
+  }
+  :where(html:not(.dark)) .panel-body tbody tr:hover {
+    background: color-mix(in srgb, var(--color-brand) 7%, transparent);
+  }
+  :where(html:not(.dark)) .pass-current {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--color-normal) 22%, transparent), transparent 65%),
+      transparent;
+    box-shadow: inset 3px 0 0 var(--color-normal), 0 0 18px rgb(0 99 173 / 25%);
+  }
+  :where(html:not(.dark)) .verdict-good {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-healthy) 20%, transparent), transparent 60%), var(--color-base-850);
+  }
+  :where(html:not(.dark)) .verdict-bad {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-alarm) 22%, transparent), transparent 60%), var(--color-base-850);
+  }
+  :where(html:not(.dark)) .schematic-live {
+    filter: drop-shadow(0 0 16px rgb(0 99 173 / 45%));
+  }
+  :where(html:not(.dark)) .hero-state-glow {
+    background: radial-gradient(circle, color-mix(in srgb, var(--hero-accent, var(--color-brand)) 30%, transparent), transparent 70%);
+  }
+}
+
+/* ── INTERACTIVE LAYER: dialog, hover card, collapsible, motion ──────────
+   shadcn Dialog/HoverCard/Collapsible spirit, hand-ported to Razor + CSS.
+   Every animation is subtle (160-280 ms) and every one is killed by the
+   prefers-reduced-motion block at the end. */
+.ui-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgb(10 17 32 / 45%);
+  backdrop-filter: blur(2px);
+  animation: ui-fade 180ms ease-out;
+}
+
+.ui-dialog {
+  position: fixed;
+  z-index: 71;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(880px, calc(100vw - 48px));
+  max-height: min(720px, calc(100dvh - 64px));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-base-900);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  animation: ui-pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes ui-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ui-pop {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+.ui-hovercard {
+  position: relative;
+  display: block;
+  min-width: 0;
+  border-radius: var(--radius-card);
+  outline-offset: 2px;
+}
+
+.ui-hovercard-card {
+  position: absolute;
+  z-index: 60;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%) translateY(4px);
+  width: max-content;
+  max-width: min(300px, 80vw);
+  background: var(--color-base-900);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  padding: 10px 12px;
+  font-size: var(--text-meta);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms ease, transform 160ms ease, visibility 160ms;
+  pointer-events: none;
+}
+
+.ui-hovercard:hover .ui-hovercard-card,
+.ui-hovercard:focus-within .ui-hovercard-card {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.ui-collapsible-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.ui-collapsible-chevron {
+  display: inline-block;
+  transition: transform 200ms ease;
+  color: var(--color-text-faint);
+  font-size: var(--text-meta);
+}
+
+.ui-collapsible-chevron-open {
+  transform: rotate(90deg);
+}
+
+.ui-collapsible-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 240ms ease;
+}
+
+.ui-collapsible-shut {
+  grid-template-rows: 0fr;
+}
+
+/* Cards arrive instead of popping in. */
+@keyframes kpi-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.kpi-enter {
+  animation: kpi-enter 260ms ease-out;
+}
+
+/* Status pills cross-fade rather than snap. */
+.status-pill {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
+/* Schematic located-region pulse: colour AND motion, never motion alone. */
+@keyframes region-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.region-hot {
+  animation: region-pulse 1.2s ease-in-out 3;
+}
+
+.region-hot rect, .region-hot circle {
+  stroke: var(--color-normal);
+}
+
+/* Schematic interactive regions. */
+.region-clickable {
+  cursor: pointer;
+}
+
+.region-clickable:hover .region-frame {
+  stroke: var(--color-normal);
+  stroke-width: 2.5;
+}
+
+/* SVG roll rotation. transform-box keeps the origin on the roll itself. */
+.spin-cw, .spin-ccw {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: coil-spin 2.4s linear infinite;
+}
+
+.spin-ccw {
+  animation-direction: reverse;
+}
+
+/* Parameter row locate flash + press feedback. */
+@keyframes locate-flash {
+  0% { background: color-mix(in srgb, var(--color-normal) 22%, transparent); }
+  100% { background: transparent; }
+}
+
+.row-located {
+  animation: locate-flash 1.6s ease-out 2;
+  border-radius: 6px;
+}
+
+.row-clickable {
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-dialog-overlay, .ui-dialog, .kpi-enter {
+    animation: none;
+  }
+  .ui-hovercard-card {
+    transition: none;
+  }
+  .ui-collapsible-chevron, .ui-collapsible-body, .status-pill {
+    transition: none;
+  }
+  .region-hot, .spin-cw, .spin-ccw {
+    animation: none;
+  }
+  .row-located {
+    animation: none;
+  }
+}

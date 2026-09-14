@@ -1,0 +1,56 @@
+<Project>
+
+  <!--
+    Central Package Management. Every version lives here; project files carry bare
+    <PackageReference Include="..." /> with no Version attribute.
+
+    Version lines, and why:
+
+      Oracle.EntityFrameworkCore 8.x   - the major tracks the EF Core major, so 8.x == EF Core 8
+                                         == net8.0. A 10.x package would demand EF Core 10.
+      Oracle.ManagedDataAccess.Core    - ODP.NET itself, versioned by database release (23ai).
+                                         Used DIRECTLY on the 10 Hz frame read/write path:
+                                         OracleDataReader and OracleCommand.ArrayBindCount.
+                                         EF Core is deliberately not on that path - change
+                                         tracking ~1,080 entities/second is indefensible and
+                                         array binding has no EF equivalent.
+      Microsoft.* 8.0.x                - stay on the net8.0 servicing line, not 10.x.
+  -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="Oracle">
+    <PackageVersion Include="Oracle.EntityFrameworkCore" Version="8.23.26301" />
+    <PackageVersion Include="Oracle.ManagedDataAccess.Core" Version="23.26.301" />
+  </ItemGroup>
+
+  <ItemGroup Label="EF Core tooling">
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.31" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.31" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.31" />
+  </ItemGroup>
+
+  <ItemGroup Label="ASP.NET Core / SignalR">
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.31" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" Version="8.0.31" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+  </ItemGroup>
+
+  <ItemGroup Label="Hosting and logging">
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />
+  </ItemGroup>
+
+  <ItemGroup Label="Test">
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.31" />
+    <PackageVersion Include="Testcontainers.Oracle" Version="4.15.0" />
+  </ItemGroup>
+
+</Project>

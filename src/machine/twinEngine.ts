@@ -21,7 +21,7 @@ import { millConfig } from '../config/millConfig'
 import { clamp, damp } from '../config/unitConversion'
 import { engineeringConfig } from '../config/engineeringConfig'
 import type { MachineState, RollingDirection } from '../types/machine'
-import { directionSign } from './reversingEngine'
+import { directionSign, payoffReel, tensionReel } from './reversingEngine'
 import { isMoving } from './machineStateMachine'
 
 /** Instantaneous targets derived from MachineState. */
@@ -90,8 +90,12 @@ function normaliseBending(bendingForce: number | null): number | null {
 
 export function deriveTargets(state: MachineState): TwinTargets {
   const sign = directionSign(state.rollingDirection)
-  const payoff = state.rollingDirection === 'FORWARD' ? state.tension.dtr : state.tension.etr
-  const winder = state.rollingDirection === 'FORWARD' ? state.tension.etr : state.tension.dtr
+  // Which reel is paying off comes from `reversingEngine`, the one place allowed
+  // to decide it — never from a second copy of the direction test in here.
+  const payoff =
+    payoffReel(state.rollingDirection) === 'DTR' ? state.tension.dtr : state.tension.etr
+  const winder =
+    tensionReel(state.rollingDirection) === 'DTR' ? state.tension.dtr : state.tension.etr
 
   // The feed being stale, or the mill not being in a moving state, both stop
   // the animation. A stopped mill and a dead link look different in the banner
@@ -228,9 +232,10 @@ export class TwinEngine {
       // at the entry speed on a shrinking coil and the winder at the exit speed
       // on a growing one. Which reel is which comes from the direction-derived
       // role, never from their position.
-      v.dtrAngle += (t.direction === 'FORWARD' ? v.payoffRpm : v.winderRpm) *
+      const spinning = payoffReel(t.direction)
+      v.dtrAngle += (spinning === 'DTR' ? v.payoffRpm : v.winderRpm) *
         radiansPerRpmSecond * dt * s
-      v.etrAngle += (t.direction === 'FORWARD' ? v.winderRpm : v.payoffRpm) *
+      v.etrAngle += (spinning === 'ETR' ? v.payoffRpm : v.winderRpm) *
         radiansPerRpmSecond * dt * s
       v.stripTravel += (v.stripSpeed / 60) * dt * s
       v.stripTravelEntry += (v.entryStripSpeed / 60) * dt * s

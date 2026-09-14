@@ -1,0 +1,169 @@
+@*
+    VALUE READOUT - the one component allowed to print a process value.
+
+    Port of src/components/common/ValueReadout.tsx, class names preserved exactly.
+
+    It takes a TAG NAME, not a number. That single design decision is what makes §7.3 and §7.4
+    enforceable rather than aspirational:
+
+      - the value, unit, limits, status and provenance all come from the same Tag
+      - a tag that does not exist on this feed renders "NO TAG" (§7.4), never 0
+      - a stale tag stops looking live (§14.5)
+
+    scripts/checkTwinEngine.ts has a sibling, RazorTagReferenceTests, that fails the build if any
+    component binds a TagName the catalogue does not declare - because a typo here renders
+    "— NO TAG" and is indistinguishable from a genuine feed limitation.
+*@
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.State
+@inject TagStore Tags
+@inject UiTickService Ticker
+@implements IDisposable
+
+@if (_tag.HasNothingToShow)
+{
+    <span class="inline-flex items-baseline gap-1.5 @Class">
+        <span class="num @SizeClass text-text-faint tracking-tight">&mdash;</span>
+        @if (!HideBadge)
+        {
+            <ProvenanceBadge Provenance="Provenance.Unavailable"
+                             Note="@(_tag.LiveNote ?? "Tag not available on the active feed")" />
+        }
+    </span>
+}
+else
+{
+    <span class="inline-flex items-baseline gap-1.5 @Class">
+        @if (Tween && _tag.Number is { } n)
+        {
+            <TweenNumber Target="@(n * Scale)" Decimals="@(Decimals ?? _tag.Decimals ?? 1)"
+                         Signed="@Signed" SizeClass="@SizeClass" ToneClass="@ValueTone" />
+        }
+        else
+        {
+            <span class="num @SizeClass tracking-tight @ValueTone">@Text</span>
+        }
+        @if (!HideUnit && Unit is not null)
+        {
+            <span class="text-text-faint text-micro leading-none">@Unit</span>
+        }
+        @if (!HideBadge)
+        {
+            <ProvenanceBadge Provenance="_tag.Provenance" Quality="_tag.Quality" Note="@_tag.LiveNote" />
+        }
+    </span>
+}
+
+@code {
+    [Parameter, EditorRequired] public string TagName { get; set; } = default!;
+
+    /// <summary>Overrides the definition's decimals when a panel needs a coarser readout.</summary>
+    [Parameter] public int? Decimals { get; set; }
+
+    /// <summary>"sm" | "md" | "lg" | "xl".</summary>
+    [Parameter] public string Size { get; set; } = "md";
+
+    /// <summary>Hide the unit suffix, where the unit is already in the row label.</summary>
+    [Parameter] public bool HideUnit { get; set; }
+
+    [Parameter] public bool HideBadge { get; set; }
+
+    [Parameter] public string Class { get; set; } = "";
+
+    /// <summary>Multiply before display, e.g. mm to µm. The unit must be overridden to match.</summary>
+    [Parameter] public double Scale { get; set; } = 1d;
+
+    [Parameter] public string? UnitOverride { get; set; }
+
+    /// <summary>Prefix a sign for deviation-style values, where the sign carries meaning.</summary>
+    [Parameter] public bool Signed { get; set; }
+
+    /// <summary>
+    /// Glide to new readings over ~300 ms instead of snapping. Numeric tags only; text tags and
+    /// missing values render statically. Off by default - sparklines already carry the motion on
+    /// dense tiles, and every tween costs a rAF loop entry.
+    /// </summary>
+    [Parameter] public bool Tween { get; set; }
+
+    private UiTag _tag;
+    private int _seenVersion = -1;
+
+    protected override void OnInitialized()
+    {
+        Ticker.Tick += OnTick;
+        _tag = Tags.Get(TagName);
+    }
+
+    protected override void OnParametersSet()
+    {
+        // The tag name can change when a parent re-binds this readout to another signal.
+        _seenVersion = -1;
+        _tag = Tags.Get(TagName);
+    }
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// THE THROTTLE.
+    ///
+    /// Called on every UI tick, but re-renders only when THIS tag's rendered representation has
+    /// changed - TagStore compares the ROUNDED value, at the precision actually printed. On a
+    /// steady mill most readouts render zero times per tick, which is what lets a 10 Hz feed cost
+    /// the circuit almost nothing.
+    /// </summary>
+    protected override bool ShouldRender()
+    {
+        var version = Tags.VersionOf(TagName);
+        if (version == _seenVersion) return false;
+
+        _seenVersion = version;
+        _tag = Tags.Get(TagName);
+        return true;
+    }
+
+    private string SizeClass => Size switch
+    {
+        "sm" => "text-body",
+        "lg" => "text-value-lg",
+        "xl" => "text-hero",
+        _ => "text-value",
+    };
+
+    private string? Unit => UnitOverride ?? _tag.Unit;
+
+    private string ValueTone => _tag.Quality == TagQuality.Stale
+        ? "text-text-faint line-through decoration-alarm/70"
+        : _tag.Status switch
+        {
+            TagStatus.Warning => "text-warning",
+            TagStatus.Alarm => "text-alarm",
+            TagStatus.Trip => "text-trip",
+            TagStatus.Unknown => "text-text-faint",
+            _ => "text-text",
+        };
+
+    private string Text
+    {
+        get
+        {
+            if (_tag.Text is { } s)
+            {
+                // Booleans ride the wire as strings from the catalogue's point of view; render
+                // them the way the React app does rather than as "true"/"false".
+                return s switch { "true" => "YES", "false" => "NO", _ => s };
+            }
+
+            if (_tag.Number is not { } n) return "—";
+
+            var scaled = n * Scale;
+            var places = Decimals ?? _tag.Decimals ?? 1;
+
+            // JavaScript's toFixed, not .NET's "F" format - see JsNumber for where they disagree.
+            var text = JsNumber.ToFixed(scaled, places);
+            return Signed && scaled >= 0 ? "+" + text : text;
+        }
+    }
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

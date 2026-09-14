@@ -1,0 +1,56 @@
+@*
+    PROVENANCE BADGE - §7.3.
+
+    "Never render a CALCULATED, SIMULATED, or ESTIMATED value with the appearance of a MEASURED
+     one. This is an audit-checked requirement, not styling."
+
+    The badge is driven by the Tag's own provenance, so a value cannot be shown without its
+    origin. THERE IS NO PARAMETER THAT LETS A CALLER OVERRIDE IT - the nearest thing is HideBadge
+    on the readout, and that is only used where the badge is already stated in the row label.
+
+    Port of src/components/common/ProvenanceBadge.tsx.
+*@
+@using Crm04.Domain.Tags
+@using Crm04.Domain.Types
+
+<span title="@Title"
+      class="inline-flex items-center border px-1 text-micro leading-[14px] font-medium tracking-wider whitespace-nowrap @ToneClass @Class">
+    @(Stale ? "STALE" : TagFactory.ProvenanceBadge(Provenance))
+</span>
+
+@code {
+    [Parameter, EditorRequired] public Provenance Provenance { get; set; }
+
+    [Parameter] public TagQuality Quality { get; set; } = TagQuality.Good;
+
+    /// <summary>The catalogue's explanation of a degraded availability. Shown on hover.</summary>
+    [Parameter] public string? Note { get; set; }
+
+    [Parameter] public string Class { get; set; } = "";
+
+    private bool Stale => Quality == TagQuality.Stale;
+
+    private string ToneClass => Stale
+        ? "text-alarm border-alarm/60 bg-alarm/10"
+        : Provenance switch
+        {
+            Provenance.Measured => "text-prov-measured border-prov-measured/45 bg-prov-measured/10",
+            Provenance.Reference => "text-prov-reference border-prov-reference/45 bg-prov-reference/10",
+            Provenance.Calculated => "text-prov-calculated border-prov-calculated/45 bg-prov-calculated/10",
+            Provenance.Simulated => "text-prov-simulated border-prov-simulated/45 bg-prov-simulated/10",
+            Provenance.Estimated => "text-prov-estimated border-prov-estimated/45 bg-prov-estimated/10",
+            // NO TAG is DASHED on purpose: it must not read as a value with a label.
+            _ => "text-prov-notag border-prov-notag/60 bg-transparent border-dashed",
+        };
+
+    private string Title
+    {
+        get
+        {
+            var parts = new List<string> { TagFactory.ProvenanceMeaning(Provenance) };
+            if (Stale) parts.Add("Value is STALE — the feed has stopped updating");
+            if (!string.IsNullOrWhiteSpace(Note)) parts.Add(Note);
+            return string.Join(" · ", parts);
+        }
+    }
+}

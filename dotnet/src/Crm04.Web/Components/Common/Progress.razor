@@ -1,0 +1,20 @@
+@* Port of Progress in src/components/ui/primitives.tsx. *@
+@using System.Globalization
+
+<div role="progressbar" aria-label="@AriaLabel" aria-valuenow="@((int)Math.Round(Pct))"
+     aria-valuemin="0" aria-valuemax="100"
+     class="bg-base-800 border-line h-2 w-full overflow-hidden rounded-full border @Class">
+    <div class="h-full rounded-full @Tone" style="width:@(Pct.ToString("0.##", CultureInfo.InvariantCulture))%;transition:width 400ms ease"></div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public double Value { get; set; }
+
+    [Parameter] public string Tone { get; set; } = "bg-normal";
+
+    [Parameter] public string Class { get; set; } = "";
+
+    [Parameter] public string? AriaLabel { get; set; }
+
+    private double Pct => Math.Clamp(double.IsFinite(Value) ? Value : 0d, 0d, 100d);
+}

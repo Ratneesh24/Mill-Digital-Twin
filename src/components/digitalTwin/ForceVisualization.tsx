@@ -63,7 +63,9 @@ function ForceArrow({ side, estimated }: { side: 'UPPER' | 'LOWER'; estimated: b
     // Arrows start just outside the work roll surface and point at the bite.
     const rollSurface = Math.abs(workRollCentreY(rollGapToScene(v.rollGap), side))
     const base = rollSurface + SCENE.wrRadius * 0.15
-    const length = 0.15 + f * 0.85
+    // Scaled to the work roll, not to an absolute scene length: on a Ø215 roll
+    // an arrow sized for a wide mill would be longer than the whole stack.
+    const length = SCENE.wrRadius * (0.7 + f * 4.0)
 
     // The arrow is modelled pointing along local -Y. The upper one therefore
     // needs no rotation; the lower one is flipped so both point AT the bite.
@@ -95,12 +97,12 @@ function ForceArrow({ side, estimated }: { side: 'UPPER' | 'LOWER'; estimated: b
   return (
     <group ref={groupRef}>
       <mesh ref={shaftRef}>
-        <cylinderGeometry args={[0.045, 0.045, 1, 12]} />
+        <cylinderGeometry args={[SCENE.wrRadius * 0.22, SCENE.wrRadius * 0.22, 1, 12]} />
         <meshStandardMaterial transparent opacity={0.75} depthWrite={false} />
       </mesh>
       {/* Cone apex points +Y by default; flip it so the arrow reads downward. */}
       <mesh ref={headRef} rotation={[Math.PI, 0, 0]}>
-        <coneGeometry args={[0.1, 0.2, 14]} />
+        <coneGeometry args={[SCENE.wrRadius * 0.48, SCENE.wrRadius * 0.95, 14]} />
         <meshStandardMaterial transparent opacity={0.75} depthWrite={false} />
       </mesh>
     </group>

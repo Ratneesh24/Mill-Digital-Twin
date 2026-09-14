@@ -1,0 +1,41 @@
+@*
+    DIALOG - modal panel in the shadcn Dialog spirit, hand-ported to Blazor.
+
+    The real shadcn CLI scaffolds React+Radix; this keeps the same contract (overlay click
+    closes, labelled region, autofocused close action, enter animation) on Razor + the
+    existing diagnostics-overlay pattern. Reduced-motion users get no animation.
+*@
+@if (Open)
+{
+    @* Teleported to the layout's modal outlet, which is what makes the fixed
+       positioning below resolve against the VIEWPORT. Rendered in place, it
+       resolves against the nearest ancestor carrying a transform, filter,
+       backdrop-filter, perspective, will-change or contain instead — and the
+       callers are KPI tiles, which animate on entry. Radix portalled to <body>
+       in the React original; this is the equivalent. See MainLayout.razor. *@
+    <SectionContent SectionName="crm04-modals">
+        <div class="ui-dialog-overlay" @onclick="Close" aria-hidden="true"></div>
+        <div class="ui-dialog" role="dialog" aria-modal="true" aria-label="@Title">
+            <div class="panel-title">
+                <span>@Title</span>
+                <button type="button" @onclick="Close" aria-label="Close @Title" autofocus
+                        class="border-line rounded-md border px-2.5 py-1 text-meta font-semibold">✕</button>
+            </div>
+            <div class="panel-body">
+                @ChildContent
+            </div>
+        </div>
+    </SectionContent>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+
+    [Parameter] public string Title { get; set; } = "Details";
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private Task Close() => OnClose.InvokeAsync();
+}

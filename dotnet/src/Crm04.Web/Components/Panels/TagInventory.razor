@@ -1,0 +1,140 @@
+@*
+    TAG INVENTORY — the §7.4 live-mode reality gap, on screen.
+
+    The gap between what the twin can show and what the plant actually
+    measures, as a countable engineering fact. Backed by GET /api/tags (the
+    mode-resolved catalogue) and GET /api/tags/inventory (the headline
+    counts). Port of src/components/panels/TagInventory.tsx.
+*@
+@using Crm04.Contracts
+@using Crm04.Domain.Types
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject ApiClient Api
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="@($"Tag map · {_filtered.Count} of {_catalog?.Tags.Count ?? 0} tags")" BodyClass="p-0 flex flex-col min-h-0">
+    <Right>
+        <span class="text-text-faint text-micro font-medium normal-case">ACTIVE MODE: @Mode</span>
+    </Right>
+    <ChildContent>
+        <div class="border-line bg-base-850 flex flex-wrap items-end gap-2.5 border-b px-3.5 py-3">
+            @if (_inventory is not null)
+            {
+                <p class="text-meta text-text-dim w-full leading-relaxed">
+                    @_inventory.Total modelled ·
+                    <span class="text-prov-measured font-semibold">@_inventory.MeasuredOnLiveFeed measured</span> ·
+                    <span class="text-prov-reference font-semibold">@_inventory.ReferenceOnLiveFeed reference</span> ·
+                    <span class="text-prov-calculated font-semibold">@_inventory.CalculatedOnLiveFeed calculated</span> ·
+                    <span class="text-prov-estimated font-semibold">@_inventory.EstimatedOnLiveFeed estimated</span> ·
+                    <span class="text-prov-notag font-semibold">@_inventory.UnavailableOnLiveFeed NO TAG</span>
+                </p>
+            }
+            <div class="min-w-[200px] flex-1">
+                <label class="label mb-1 block">Search tags</label>
+                <input type="search" value="@_query" @oninput="OnQuery" placeholder="Tag, description or unit…"
+                       class="border-line bg-base-900 text-text min-h-10 w-full rounded-md border px-3 text-meta" />
+            </div>
+            <div>
+                <label class="label mb-1 block">Provenance</label>
+                <select value="@_prov" @onchange="OnProv" class="border-line bg-base-900 text-text min-h-10 rounded-md border px-2.5 text-meta">
+                    <option value="">All</option>
+                    <option value="MEASURED">MEASURED</option>
+                    <option value="REFERENCE">REFERENCE</option>
+                    <option value="CALCULATED">CALCULATED</option>
+                    <option value="SIMULATED">SIMULATED</option>
+                    <option value="ESTIMATED">ESTIMATED</option>
+                    <option value="UNAVAILABLE">NO TAG</option>
+                </select>
+            </div>
+        </div>
+        <div class="min-h-0 max-h-[420px] flex-1 overflow-auto">
+            @if (_catalog is null)
+            {
+                <p class="text-text-faint text-meta px-3.5 py-6 text-center">Loading tag catalogue…</p>
+            }
+            else if (_filtered.Count == 0)
+            {
+                <p class="text-text-faint text-meta px-3.5 py-6 text-center">No tags match.</p>
+            }
+            else
+            {
+                <table class="w-full border-collapse">
+                    <thead class="bg-base-850 sticky top-0 z-10">
+                        <tr class="text-text-faint border-line border-b text-micro tracking-wider">
+                            <th class="px-2.5 py-2 text-left font-semibold">TAG</th>
+                            <th class="px-2.5 py-2 text-left font-semibold">DESCRIPTION</th>
+                            <th class="px-2.5 py-2 text-left font-semibold">UNIT</th>
+                            <th class="px-2.5 py-2 text-left font-semibold">NOW</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _filtered)
+                        {
+                            <tr @key="t.TagName" class="border-line border-b text-meta" title="@t.LiveNote">
+                                <td class="num text-text px-2.5 py-1.5 whitespace-nowrap">@t.TagName</td>
+                                <td class="text-text-dim px-2.5 py-1.5">@t.Description</td>
+                                <td class="text-text-faint num px-2.5 py-1.5">@(t.Unit ?? "—")</td>
+                                <td class="px-2.5 py-1.5"><ProvenanceBadge Provenance="t.Provenance" Note="@t.LiveNote" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </ChildContent>
+</Panel>
+
+@code {
+    private TagCatalogDto? _catalog;
+    private Crm04.Domain.Tags.TagInventory? _inventory;
+    private List<TagCatalogEntryDto> _filtered = [];
+    private string _query = string.Empty;
+    private string _prov = string.Empty;
+    private int _seen = -1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ticker.Tick += OnTick;
+        _catalog = await Api.GetTagCatalogAsync();
+        _inventory = await Api.GetTagInventoryAsync();
+        ApplyFilter();
+    }
+
+    private void OnTick() => InvokeAsync(() =>
+    {
+        // Re-fetch the catalogue when the mode changes (provenance is per-mode).
+        if (Mill.Version != _seen)
+        {
+            _seen = Mill.Version;
+            _ = RefreshCatalog();
+        }
+    });
+
+    private async Task RefreshCatalog()
+    {
+        _catalog = await Api.GetTagCatalogAsync();
+        ApplyFilter();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnQuery(ChangeEventArgs e) { _query = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }
+    private void OnProv(ChangeEventArgs e) { _prov = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }
+
+    private void ApplyFilter()
+    {
+        if (_catalog is null) { _filtered = []; return; }
+        var needle = _query.Trim().ToLowerInvariant();
+        _filtered = _catalog.Tags.Where(t =>
+            (_prov.Length == 0 || t.Provenance.ToWire() == _prov) &&
+            (needle.Length == 0 || t.TagName.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+             t.Description.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+             (t.Unit ?? "").Contains(needle, StringComparison.OrdinalIgnoreCase))).ToList();
+    }
+
+    private string Mode => Mill.Summary?.Mode.ToWire() ?? "—";
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

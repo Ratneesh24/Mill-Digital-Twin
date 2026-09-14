@@ -1,0 +1,97 @@
+@*
+    EVENT TIMELINE — bounded in-memory log.
+
+    The React app keeps a bounded event ring in its machine store. The API
+    pushes alarms, not an event journal, so this panel derives its timeline
+    locally: alarm transitions, mill-status transitions and connection
+    transitions, oldest falling off past 100 entries. Port of
+    src/components/panels/EventTimeline.tsx (behaviour, not transport).
+*@
+@using Crm04.Domain.Machine
+@using Crm04.Domain.Types
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="Event timeline" BodyClass="p-0">
+    @if (_events.Count == 0)
+    {
+        <p class="text-text-faint text-meta px-3 py-4 text-center">No events recorded</p>
+    }
+    else
+    {
+        <ul class="divide-line divide-y">
+            @foreach (var e in _events.AsEnumerable().Reverse())
+            {
+                <li @key="e.Id" class="flex items-baseline gap-2 px-2.5 py-[3px]">
+                    <span class="num text-text-faint shrink-0 text-micro">@e.Time</span>
+                    <span class="truncate text-micro tracking-wide @CatClass(e.Category)">@e.Message</span>
+                </li>
+            }
+        </ul>
+    }
+</Panel>
+
+@code {
+    private sealed record Entry(long Id, string Time, string Category, string Message);
+
+    private readonly List<Entry> _events = [];
+    private long _nextId = 1;
+    private int _lastAlarmCount = -1;
+    private string _lastStatus = "";
+    private string _lastConn = "";
+    private int _seen = -1;
+
+    protected override void OnInitialized()
+    {
+        Ticker.Tick += OnTick;
+        Push("STATE", "Twin connected — watching feed");
+    }
+
+    private void OnTick() => InvokeAsync(() =>
+    {
+        if (Mill.Version == _seen) return;
+        _seen = Mill.Version;
+        var s = Mill.Summary;
+        if (s is null) return;
+
+        var status = s.StatusLabel;
+        if (status != _lastStatus)
+        {
+            _lastStatus = status;
+            Push("STATE", status);
+        }
+        if (Mill.Alarms.Count != _lastAlarmCount)
+        {
+            _lastAlarmCount = Mill.Alarms.Count;
+            Push("ALARM", Mill.Alarms.Count == 0 ? "All alarms cleared" : $"{Mill.Alarms.Count} active alarm(s)");
+        }
+        var conn = s.Communication is { Connected: true, Stale: false } ? "CONNECTED"
+            : s.Communication.Stale ? "STALE" : "LOST";
+        if (conn != _lastConn)
+        {
+            _lastConn = conn;
+            Push("COMMS", $"Feed {conn}");
+        }
+        StateHasChanged();
+    });
+
+    private void Push(string category, string message)
+    {
+        _events.Add(new Entry(_nextId++, DateTime.Now.ToString("h:mm:ss tt"), category, message));
+        while (_events.Count > 100) _events.RemoveAt(0);
+    }
+
+    private static string CatClass(string c) => c switch
+    {
+        "PASS" => "text-healthy",
+        "ALARM" => "text-alarm",
+        "COMMS" => "text-warning",
+        "OPERATOR" => "text-prov-simulated",
+        _ => "text-normal",
+    };
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

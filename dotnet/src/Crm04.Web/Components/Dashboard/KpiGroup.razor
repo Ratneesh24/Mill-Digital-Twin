@@ -1,0 +1,26 @@
+@*
+    A titled group of KPI tiles. The accent is WAYFINDING - it says which group you are looking
+    at, never how healthy it is. Port of KpiGroup in src/components/pages/DashboardPage.tsx.
+*@
+@using Crm04.Web.Components.Common
+
+<section class="kpi-group" aria-label="@Title" style="--group-accent:@Accent">
+    <h2 class="kpi-group-title">
+        @if (Icon is not null)
+        {
+            <span aria-hidden="true" class="inline-flex items-center"><Icon Name="@Icon" Size="12" /></span>
+        }
+        <span class="truncate">@Title</span>
+    </h2>
+    <div class="kpi-group-grid">@ChildContent</div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Accent { get; set; } = default!;
+
+    [Parameter] public string? Icon { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

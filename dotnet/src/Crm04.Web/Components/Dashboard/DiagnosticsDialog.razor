@@ -1,0 +1,73 @@
+@*
+    DIAGNOSTICS DIALOG — MODEL / DATA behind one click.
+
+    The React app opens this from the MODEL / DATA STATUS chip: tag
+    inventory, plant config, feed diagnostics and validation. Those panels
+    are M8; this dialog hosts the Blazor ports in tabs. The chip verdict
+    (feed health, not mill health) stays on every page.
+*@
+@using Crm04.Web.Components.Panels
+
+@if (Open)
+{
+    @* Teleported to the layout's modal outlet. This component is rendered from the
+       MODEL / DATA chip, which lives inside `.brand-header` — and that header's
+       backdrop-filter would otherwise become the containing block for the fixed
+       positioning below, centring the panel on the header instead of the screen.
+       See the outlet comment in MainLayout.razor. *@
+    <SectionContent SectionName="crm04-modals">
+        <div class="diagnostics-overlay" @onclick="Close" aria-hidden="true"></div>
+        <div class="diagnostics-panel" role="dialog" aria-modal="true" aria-label="Model and data diagnostics">
+        <div class="panel-title">
+            <span>MODEL / DATA — diagnostics</span>
+            <div class="flex items-center gap-2">
+                <div role="tablist" aria-label="Diagnostics sections" class="segmented">
+                    @foreach (var t in Tabs)
+                    {
+                        @* Explicit "true"/"false" strings, NOT a bool. Blazor renders a bool
+                           attribute as aria-pressed="" when true and omits it when false, which
+                           matches neither the `[aria-pressed='true']` rule in app.css nor the ARIA
+                           spec — the pill loses its fill and screen readers announce nothing. *@
+                        <button key="@t" type="button" role="tab" aria-selected="@(_tab == t ? "true" : "false")"
+                                aria-pressed="@(_tab == t ? "true" : "false")" @onclick="() => _tab = t">@t</button>
+                    }
+                </div>
+                <button type="button" @onclick="Close" aria-label="Close diagnostics"
+                        class="border-line rounded-md border px-2.5 py-1 text-meta font-semibold">✕</button>
+            </div>
+        </div>
+        <div class="diagnostics-body">
+            @if (_tab == "Feed")
+            {
+                <FeedDiagnostics />
+            }
+            else if (_tab == "Tags")
+            {
+                <TagInventory />
+            }
+            else if (_tab == "Plant")
+            {
+                <PlantConfig />
+            }
+            else if (_tab == "Checks")
+            {
+                <DataIntegrity />
+            }
+            else
+            {
+                <EventTimeline />
+            }
+            </div>
+        </div>
+    </SectionContent>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string _tab = "Feed";
+    private static readonly string[] Tabs = ["Feed", "Tags", "Plant", "Events", "Checks"];
+
+    private Task Close() => OnClose.InvokeAsync();
+}

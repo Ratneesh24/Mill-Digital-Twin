@@ -1,0 +1,349 @@
+@*
+    KPI TILE - one primary process value, read at a glance.
+
+      +------------------------------+
+      | EXIT THICKNESS          [SIM]|  name + provenance
+      | 2.151 mm                     |  ACTUAL - tweened, bold, largest
+      | SP 2.150 mm   d +1.0 um      |  SETPOINT + DEVIATION
+      | ████████████░░░░░░           |  utilisation vs rating
+      | * NORMAL                     |  STATUS - colour AND text
+      | 360 t RATING                 |  what 100% means
+      | ^ 2.1% vs previous pass      |  pass-over-pass delta
+      | ~~~~~~~ sparkline ~~~~~~~    |  recent history
+      +------------------------------+
+
+    Hover (or keyboard focus) shows min/max/target/current for the last hour. Click opens the
+    signal's full trend in a dialog. The tile keeps the same footprint in the ribbon; the detail
+    lives one interaction away rather than crowding the glanceable number.
+
+    Status is never carried by colour alone: every tile pairs the tone with a word, which is
+    what keeps it readable for colourblind operators and legible from a few feet away.
+
+    The value always comes from `ValueReadout`, so a parameter with no tag on the active feed
+    reads NO TAG here exactly as it does everywhere else (§7.4).
+*@
+@using Crm04.Contracts
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Charts
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject TagStore Tags
+@inject UiTickService Ticker
+@inject ApiClient Api
+@inject PassHistory Passes
+@implements IDisposable
+
+<HoverCard>
+    <Trigger>
+        <div class="kpi-tile kpi-enter border-line bg-base-900 border" style="@AccentStyle"
+             role="button" tabindex="0" aria-label="@Label - open trend"
+             @onclick="Expand" @onkeydown="OnKey" @onmouseenter="EnsureDetail">
+            <div class="kpi-tile-head">
+                @if (Icon is not null)
+                {
+                    <span aria-hidden="true" class="kpi-icon"><Icon Name="@Icon" Size="15" /></span>
+                }
+                <div class="label min-w-0 flex-1 truncate">@Label</div>
+            </div>
+
+            <div class="mt-1 min-w-0">
+                <ValueReadout TagName="@TagName" Size="lg" Decimals="Decimals" Scale="Scale"
+                              UnitOverride="@UnitOverride" Signed="Signed" Tween="true" />
+            </div>
+
+            @if (SetpointTag is not null || DeviationTag is not null)
+            {
+                <div class="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                    @if (SetpointTag is not null)
+                    {
+                        <span class="text-text-faint text-micro inline-flex items-baseline gap-1">
+                            SP
+                            <ValueReadout TagName="@SetpointTag" Size="sm" Decimals="Decimals" Scale="Scale"
+                                          UnitOverride="@UnitOverride" HideBadge="true" Class="text-text-dim" />
+                        </span>
+                    }
+                    @if (DeviationTag is not null)
+                    {
+                        <span class="text-text-faint text-micro inline-flex items-baseline gap-1">
+                            &Delta;
+                            <ValueReadout TagName="@DeviationTag" Size="sm" Decimals="DeviationDecimals"
+                                          UnitOverride="@DeviationUnit" Signed="true" HideBadge="true" />
+                        </span>
+                    }
+                </div>
+            }
+
+            @if (ProgressValue is { } pct)
+            {
+                <div class="mt-2">
+                    <Progress Value="pct" Tone="@(ProgressTone ?? "bg-normal")" AriaLabel="@(Label + " utilisation")" />
+                </div>
+            }
+
+            <div class="mt-2">
+                <span class="status-pill @PillClass">
+                    <span aria-hidden="true" class="dot-glow h-1.5 w-1.5 shrink-0 rounded-full @DotClass"></span>
+                    @StatusText
+                </span>
+            </div>
+
+            @if (RatingCaption is not null)
+            {
+                <div class="text-text-faint text-micro mt-1.5">@RatingCaption</div>
+            }
+
+            @if (DeltaPercent is { } d)
+            {
+                <div class="text-micro mt-1 font-semibold @(d >= 0 ? "text-warning" : "text-healthy")">
+                    @(d >= 0 ? "↑" : "↓") @JsNumber.ToFixed(Math.Abs(d), 1)% vs previous pass
+                </div>
+            }
+
+            @if (Spark)
+            {
+                <div class="kpi-spark kpi-sparkline" aria-hidden="true">
+                    <Sparkline TagName="@TagName" Color="@(Accent ?? "var(--color-brand)")" Fluid="true" Height="26" />
+                </div>
+            }
+            else
+            {
+                <div class="kpi-spark" aria-hidden="true">
+                    <div class="border-line/60 border-b border-dashed" style="height:26px"></div>
+                </div>
+            }
+        </div>
+    </Trigger>
+    <Card>
+        @if (_detail is null)
+        {
+            <p class="text-text-faint">Collecting hour trend…</p>
+        }
+        else
+        {
+            <div class="text-text font-semibold">@_detail.Label <span class="text-text-faint font-normal">@_detail.WindowLabel trend</span></div>
+            <div class="mt-1.5 space-y-1">
+                <div class="flex justify-between gap-4"><span class="text-text-faint">Current</span><span class="num text-text font-semibold">@Fmt(_detail.Current, _detail.Decimals) @_detail.Unit</span></div>
+                <div class="flex justify-between gap-4"><span class="text-text-faint">Min / max</span><span class="num text-text">@Fmt(_detail.Min, _detail.Decimals) … @Fmt(_detail.Max, _detail.Decimals) @_detail.Unit</span></div>
+                <div class="flex justify-between gap-4"><span class="text-text-faint">Target</span><span class="num text-text">@(_detail.Target ?? "—")</span></div>
+            </div>
+            <p class="text-text-faint text-micro mt-1.5">Click the tile for the full trend.</p>
+        }
+    </Card>
+</HoverCard>
+
+<Dialog Open="_expanded" Title="@(Label + " — trend · " + (_detail?.WindowLabel ?? ""))" OnClose="Close">
+    @if (_detail?.Series is { } series)
+    {
+        <TrendChart Pens="_dialogPens" Limits="_detail.Limits" WindowMs="_detail.WindowMs" />
+    }
+    else
+    {
+        <p class="text-text-faint text-meta">No trend for this tag on the active feed yet — wider windows fill as the feed runs.</p>
+    }
+</Dialog>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string TagName { get; set; } = default!;
+
+    [Parameter] public int? Decimals { get; set; }
+
+    [Parameter] public double Scale { get; set; } = 1d;
+
+    [Parameter] public string? UnitOverride { get; set; }
+
+    [Parameter] public bool Signed { get; set; }
+
+    /// <summary>Accent colour for the group this tile belongs to. WAYFINDING ONLY - never status.</summary>
+    [Parameter] public string? Accent { get; set; }
+
+    /// <summary>Setpoint tag, rendered as "SP &lt;value&gt;" under the actual.</summary>
+    [Parameter] public string? SetpointTag { get; set; }
+
+    /// <summary>
+    /// Deviation tag. A real tag is preferred over subtracting here - the model already publishes
+    /// deviation where it is meaningful, and recomputing it would be a second source.
+    /// </summary>
+    [Parameter] public string? DeviationTag { get; set; }
+
+    [Parameter] public int? DeviationDecimals { get; set; }
+
+    [Parameter] public string? DeviationUnit { get; set; }
+
+    /// <summary>Lucide icon shown in the accent chip. Visual wayfinding only.</summary>
+    [Parameter] public string? Icon { get; set; }
+
+    /// <summary>Draw the inline sparkline from this tag's recent history.</summary>
+    [Parameter] public bool Spark { get; set; } = true;
+
+    /// <summary>Utilisation bar, 0-100. Pass a rating fraction where one honestly exists.</summary>
+    [Parameter] public double? ProgressValue { get; set; }
+
+    [Parameter] public string? ProgressTone { get; set; }
+
+    /// <summary>Caption stating what 100% means, e.g. "360 t RATING". Never leave it implied.</summary>
+    [Parameter] public string? RatingCaption { get; set; }
+
+    private sealed record Detail(
+        string Key, string Label, string Unit, string Color, int Decimals, bool IsReference,
+        TrendSeriesDto Series, double Min, double Max, double? Current, string? Target,
+        IReadOnlyDictionary<string, TrendLimitDto>? Limits, string WindowLabel, long WindowMs);
+
+    private bool _expanded;
+    private Detail? _detail;
+    private IReadOnlyList<TrendChart.Pen> _dialogPens = [];
+    private bool _fetching;
+
+    private int _seen = -1;
+    private int _seenDetail = -1;
+    private bool _seenExpanded;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        var v = Tags.VersionOf(TagName);
+        // Structural changes (dialog open/close, fetched detail) always repaint.
+        if (_detailStamp != _seenDetail || _expanded != _seenExpanded)
+        {
+            _seen = v;
+            _seenDetail = _detailStamp;
+            _seenExpanded = _expanded;
+            return true;
+        }
+
+        // While the dialog covers the tile, tag ticks must not rebuild the dialog subtree on
+        // every change: the chart is static post-fetch, and rebuilding it per tick is the
+        // backlog that made close feel stuck.
+        if (_expanded) return false;
+        if (v == _seen) return false;
+        _seen = v;
+        return true;
+    }
+
+    private int _detailStamp;
+
+    private async Task Expand()
+    {
+        _expanded = true;
+        await EnsureDetail();
+    }
+
+    private void Close() => _expanded = false;
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            _expanded = true;
+            await EnsureDetail();
+        }
+    }
+
+    /// <summary>
+    /// Lazy trend fetch, shared by the hover card and the dialog. Runs once per tile until the
+    /// catalogue changes. Fetches every window in parallel and keeps the densest: the hour buffer
+    /// only fills after an hour of feed, and a sparse hour chart helps nobody when the 5-minute
+    /// one is already rich. The effective window is labelled everywhere the data appears.
+    /// A failed fetch simply leaves the "collecting" state in place.
+    /// </summary>
+    private async Task EnsureDetail()
+    {
+        if (_detail is not null || _fetching) return;
+        _fetching = true;
+        try
+        {
+            var catalog = await Api.GetTrendCatalogAsync();
+            var signal = catalog?.Signals.FirstOrDefault(s =>
+                s.TagName == TagName && s.AvailableOnThisFeed);
+            if (signal is null) return;
+
+            var windows = new[] { "1h", "30m", "15m", "5m" };
+            var responses = await Task.WhenAll(windows.Select(w => Api.GetTrendsAsync([signal.Key], w)));
+
+            TrendSeriesDto? best = null;
+            TrendResponseDto? bestResponse = null;
+            var bestWindow = "";
+            var bestCount = 1; // need at least two finite points to draw
+            for (var i = 0; i < windows.Length; i++)
+            {
+                var series = responses[i]?.Series.FirstOrDefault(s => s.Key == signal.Key);
+                var clean = series is null ? null : TrendChart.WithoutGaps(series);
+                if (clean is not null && clean.V.Length > bestCount)
+                {
+                    best = clean;
+                    bestResponse = responses[i];
+                    bestWindow = windows[i];
+                    bestCount = clean.V.Length;
+                }
+            }
+
+            if (best is null || bestResponse is null) return;
+
+            var target = SetpointTag is not null && Tags.Get(SetpointTag).Number is { } sp
+                ? $"{JsNumber.ToFixed(sp * Scale, Decimals ?? Tags.Get(SetpointTag).Decimals ?? 1)} {UnitOverride ?? Tags.Get(TagName).Unit ?? signal.Unit}"
+                : null;
+
+            _detail = new Detail(
+                signal.Key, signal.Label, signal.Unit, signal.Color, signal.Decimals, signal.IsReference,
+                best, best.V.Min(), best.V.Max(), Tags.Get(TagName).Number, target,
+                bestResponse.ReferenceLines, bestWindow, bestResponse.WindowMs);
+            // Hoisted: allocating this inline in markup rebuilt it on every tag tick, defeating
+            // the chart's render gate and re-serializing the whole series per tick.
+            _dialogPens = [new TrendChart.Pen(signal.Key, signal.Label, signal.Unit, signal.Color, signal.Decimals, signal.IsReference, best)];
+            _detailStamp++;
+            await InvokeAsync(StateHasChanged);
+        }
+        finally { _fetching = false; }
+    }
+
+    private string? AccentStyle => Accent is null ? null : $"--kpi-accent:{Accent}";
+
+    private UiTag Tag => Tags.Get(TagName);
+
+    private double? DeltaPercent => Passes.DeltaPercent(TagName, Tag.Number);
+
+    private static string Fmt(double? v, int decimals) =>
+        v is { } x && double.IsFinite(x) ? JsNumber.ToFixed(x, decimals) : "—";
+
+    /// <summary>
+    /// A tag that is absent or unavailable reads NO DATA, not NORMAL. A missing reading is not a
+    /// healthy one, and this is the tile-level expression of §7.4.
+    /// </summary>
+    private TagStatus? Status => Tag.Present && Tag.Provenance != Provenance.Unavailable
+        ? Tag.Status
+        : null;
+
+    private string StatusText => Status switch
+    {
+        TagStatus.Trip => "TRIP",
+        TagStatus.Alarm => "ALARM",
+        TagStatus.Warning => "WARNING",
+        TagStatus.Normal => "NORMAL",
+        _ => "NO DATA",
+    };
+
+    private string PillClass => Status switch
+    {
+        TagStatus.Trip => "status-pill-trip text-trip",
+        TagStatus.Alarm => "status-pill-alarm text-alarm",
+        TagStatus.Warning => "status-pill-warning text-warning",
+        TagStatus.Normal => "status-pill-normal text-healthy",
+        _ => "status-pill-missing text-text-faint",
+    };
+
+    private string DotClass => Status switch
+    {
+        TagStatus.Trip => "bg-trip",
+        TagStatus.Alarm => "bg-alarm",
+        TagStatus.Warning => "bg-warning",
+        TagStatus.Normal => "bg-healthy",
+        _ => "bg-inactive",
+    };
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

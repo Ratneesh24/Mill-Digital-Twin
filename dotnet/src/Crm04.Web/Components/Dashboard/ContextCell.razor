@@ -1,0 +1,26 @@
+@* One cell of the operating-context strip. *@
+@using Crm04.Web.Components.Common
+
+<div class="ctx-cell min-w-0">
+    @if (Icon is not null)
+    {
+        <span aria-hidden="true" class="ctx-ico @(Live ? "bg-healthy/15 text-healthy" : "")">
+            <Icon Name="@Icon" Size="16" />
+        </span>
+    }
+    <div class="min-w-0 flex-1">
+        <div class="label truncate">@Label</div>
+        <div class="mt-1 truncate">@ChildContent</div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = default!;
+
+    [Parameter] public string? Icon { get; set; }
+
+    /// <summary>Tints the icon chip green while the mill is actually rolling.</summary>
+    [Parameter] public bool Live { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

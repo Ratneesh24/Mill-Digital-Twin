@@ -43,6 +43,8 @@ export function WorkRoll({ side }: Props) {
 
   const r = SCENE.wrRadius
   const halfBarrel = SCENE.barrelLength / 2
+  const neckR = SCENE.wrNeckRadius
+  const neckLength = neckR * 2.4
 
   return (
     <group ref={liftRef}>
@@ -54,10 +56,15 @@ export function WorkRoll({ side }: Props) {
             <meshStandardMaterial {...MATERIALS.workRoll} />
           </mesh>
 
-          {/* Neck extensions into the chocks. */}
+          {/*
+            Neck extensions into the chocks. The neck diameter is the bore of the
+            Timken TQO 4-row taper roller bearing the roll actually runs in
+            (Ø120.650, §10.4 item 19) rather than a fraction of the barrel — on a
+            Ø215 work roll that is a genuinely thick neck, and it should look it.
+          */}
           {[-1, 1].map((s) => (
-            <mesh key={s} position={[0, s * (SCENE.barrelLength / 2 + 0.09), 0]} castShadow>
-              <cylinderGeometry args={[r * 0.58, r * 0.58, 0.18, 24]} />
+            <mesh key={s} position={[0, s * (halfBarrel + neckLength / 2), 0]} castShadow>
+              <cylinderGeometry args={[neckR, neckR, neckLength, 24]} />
               <meshStandardMaterial {...MATERIALS.workRollChock} />
             </mesh>
           ))}
@@ -67,17 +74,26 @@ export function WorkRoll({ side }: Props) {
             feature a smooth cylinder appears stationary at any speed, which
             would hide the single most important thing the scene has to show.
           */}
-          <mesh position={[0, halfBarrel + 0.181, r * 0.34]} castShadow>
-            <boxGeometry args={[0.035, 0.012, r * 0.5]} />
+          <mesh position={[0, halfBarrel + neckLength + 0.001, neckR * 0.6]} castShadow>
+            <boxGeometry args={[0.03, 0.01, neckR * 0.8]} />
             <meshStandardMaterial {...MATERIALS.rollMarker} />
           </mesh>
         </group>
       </group>
 
-      {/* Chocks — static, they do not rotate with the roll. */}
+      {/*
+        Chocks — static, they do not rotate with the roll. Both work rolls are
+        held together by pins on the bottom chock and change as one stack (§6.5),
+        which is why the roll changing car handles them as a single assembly.
+      */}
       {[-1, 1].map((s) => (
-        <mesh key={s} position={[0, 0, s * (halfBarrel + 0.19)]} castShadow receiveShadow>
-          <boxGeometry args={[r * 1.7, r * 1.7, 0.18]} />
+        <mesh
+          key={s}
+          position={[0, 0, s * (halfBarrel + neckLength / 2)]}
+          castShadow
+          receiveShadow
+        >
+          <boxGeometry args={[neckR * 2.6, neckR * 2.6, neckLength]} />
           <meshStandardMaterial {...MATERIALS.workRollChock} />
         </mesh>
       ))}

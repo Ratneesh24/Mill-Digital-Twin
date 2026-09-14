@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Crm04.Web - Blazor Server.
+
+    NOTE THE MISSING REFERENCE: this project does NOT reference Crm04.Persistence, and
+    must not. The web app reaches Oracle only through Crm04.Api. That is what keeps
+    "there is exactly one MachineState projector" true - if Web could query Oracle it
+    could build a second one, which is precisely the §4 rule the TypeScript app enforces
+    by making communication/dataAdapter.ts the only constructor.
+
+    It references Crm04.Domain for the shared types only.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Crm04.Web</RootNamespace>
+    <UserSecretsId>crm04-web-1c9e4a75-05b8-4f31-b6d7-93a0e28c5610</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" />
+    <PackageReference Include="Serilog.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Crm04.Domain\Crm04.Domain.csproj" />
+    <ProjectReference Include="..\Crm04.Contracts\Crm04.Contracts.csproj" />
+  </ItemGroup>
+
+  <!--
+    Compile the design system.
+
+    Tailwind v4 generates utilities BY SCANNING CONTENT, so the stylesheet has to be rebuilt
+    whenever a .razor file changes: a component using a class no other component used would
+    otherwise get nothing, silently, with no error anywhere.
+
+    SkipClientAssets=true for a build agent with no Node - wwwroot/css/app.css is committed, so a
+    node-less CI still produces a correct binary.
+  -->
+  <Target Name="BuildClientCss" BeforeTargets="BeforeBuild" Condition="'$(SkipClientAssets)' != 'true'">
+    <Exec Command="npm install --no-audit --no-fund"
+          WorkingDirectory="ClientApp"
+          Condition="!Exists('ClientApp/node_modules')"
+          ContinueOnError="true" />
+    <Exec Command="npm run build:css"
+          WorkingDirectory="ClientApp"
+          ContinueOnError="true" />
+  </Target>
+
+  <ItemGroup>
+    <!-- Not compiled into the assembly; they are inputs to the CSS build above. -->
+    <Content Remove="ClientApp\**" />
+    <None Include="ClientApp\package.json" />
+    <None Include="Styles\app.css" />
+  </ItemGroup>
+
+</Project>

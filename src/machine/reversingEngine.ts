@@ -148,20 +148,30 @@ export function reversalProgress(
 /**
  * Which physical reel is upstream (paying off) for a given direction.
  *
- * Geometric convention used throughout the twin:
- *   DTR sits on the -X side of the stand, ETR on the +X side.
- *   FORWARD means the strip travels -X -> +X, so DTR pays off and ETR winds.
- *   REVERSE means +X -> -X, so ETR pays off and DTR winds.
+ * Geometric convention used throughout the twin, following the OEM line layout
+ * (FPE manual §3: POR -> pinch roll/flattener -> ETR -> entry deflector -> MILL
+ * -> delivery deflector -> DTR):
+ *
+ *   ETR is the ENTRY tension reel. It sits on the -X side of the stand, sharing
+ *   that side with the pay-off reel and the pinch roll cum flattener, which are
+ *   outboard of it.
+ *   DTR is the DELIVERY tension reel, alone on the +X side.
+ *   FORWARD is the first pass: the strip travels -X -> +X, so ETR pays off and
+ *   DTR winds. REVERSE is +X -> -X, so DTR pays off and ETR winds.
+ *
+ * The mill hand is right to left (§1.1). The default camera looks in from +X/+Z,
+ * which renders -X on screen-right, so FORWARD reads right-to-left on screen as
+ * it does on the shop floor.
  *
  * Everything else — labels in the 3D scene, which reel's diameter grows, which
  * tension is "entry" — is derived from this one function.
  */
 export function payoffReel(direction: RollingDirection): 'DTR' | 'ETR' {
-  return direction === 'FORWARD' ? 'DTR' : 'ETR'
+  return direction === 'FORWARD' ? 'ETR' : 'DTR'
 }
 
 export function tensionReel(direction: RollingDirection): 'DTR' | 'ETR' {
-  return direction === 'FORWARD' ? 'ETR' : 'DTR'
+  return direction === 'FORWARD' ? 'DTR' : 'ETR'
 }
 
 export function reelRole(reel: 'DTR' | 'ETR', direction: RollingDirection): ReelRole {

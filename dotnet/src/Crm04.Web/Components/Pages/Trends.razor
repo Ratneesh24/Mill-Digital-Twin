@@ -1,0 +1,321 @@
+@page "/trends"
+@*
+    REAL-TIME TRENDS — the investigative page.
+
+    "How are the process parameters behaving over time?"
+
+    Searchable parameter browser left, synchronised multi-channel plot right.
+    Channels capped at 8: beyond that a trend stops being readable.
+
+    Port of src/components/pages/TrendsPage.tsx. Class names preserved so the
+    Tata Steel design system applies unchanged: .dashboard-trendspage,
+    .trend-legend (52px fixed), .trend-plot (definite height for the SVG).
+*@
+@using Crm04.Contracts
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Charts
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject ApiClient Api
+@inject UiStore Ui
+@inject TagStore Tags
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>CRM04 · Real-time trends</PageTitle>
+
+<div class="dashboard-trendspage min-h-0">
+    <Panel Title="@($"Parameters · {Selected.Count}/{MaxPens}")" Class="min-h-0" BodyClass="p-0 flex flex-col min-h-0">
+        <Right>
+            @if (Selected.Count > 0)
+            {
+                <button type="button" @onclick="Clear" class="text-text-faint hover:text-text-dim text-micro tracking-wider">
+                    CLEAR
+                </button>
+            }
+        </Right>
+        <ChildContent>
+            <div class="border-line bg-base-850 shrink-0 border-b px-3 py-2.5">
+                <div class="relative">
+                    <span aria-hidden="true" class="text-text-faint pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2">
+                        <Icon Name="Search" Size="14" />
+                    </span>
+                    <input type="search" value="@_filter" @oninput="OnFilter"
+                           placeholder="Search parameters, units or tags…"
+                           aria-label="Search trend parameters"
+                           class="border-line bg-base-900 text-text text-meta focus:border-brand min-h-9 w-full rounded-md border py-1.5 pr-2.5 pl-8" />
+                </div>
+                @if (_atCap)
+                {
+                    <p role="status" class="text-warning text-micro mt-2 leading-snug">
+                        @MaxPens channels is the maximum — remove one before adding another.
+                    </p>
+                }
+            </div>
+
+            <div class="min-h-0 flex-1 overflow-auto">
+                @if (_catalog is null)
+                {
+                    <p class="text-text-faint text-meta px-3 py-4 text-center">Loading catalogue…</p>
+                }
+                else if (Grouped.Count == 0)
+                {
+                    <p class="text-text-faint text-meta px-3 py-4 text-center">No parameter matches “@_filter”.</p>
+                }
+                else
+                {
+                    @foreach (var g in Grouped)
+                    {
+                        <section @key="g.Group">
+                            <h3 class="label bg-base-850/70 border-line sticky top-0 z-10 border-b px-3 py-1.5 font-semibold"
+                                style="border-left:3px solid @GroupAccent(g.Group)">
+                                @g.Group.ToUpperInvariant()
+                            </h3>
+                            <ul>
+                                @foreach (var s in g.Signals)
+                                {
+                                    var active = Selected.Contains(s.Key);
+                                    <li @key="s.Key">
+                                        <button type="button" aria-pressed="@(active ? "true" : "false")"
+                                                disabled="@(!active && (Selected.Count >= MaxPens || !s.AvailableOnThisFeed))"
+                                                title="@SignalTitle(s)"
+                                                @onclick="() => Toggle(s.Key)"
+                                                class="border-line/60 flex w-full items-center gap-2 border-b px-3 py-2 text-left transition-colors @(active ? "bg-brand/8" : "hover:bg-base-800") @(!s.AvailableOnThisFeed ? "opacity-60" : "")">
+                                            <span aria-hidden="true" class="h-[3px] w-4 shrink-0 rounded-full"
+                                                  style="background:@(active ? s.Color : "var(--color-inactive)");opacity:@(active ? "1" : "0.4")"></span>
+                                            <span class="text-meta min-w-0 flex-1 truncate @(active ? "text-text font-semibold" : "text-text-dim")">@s.Label</span>
+                                            <span class="text-text-faint text-micro shrink-0">@s.Unit</span>
+                                        </button>
+                                    </li>
+                                }
+                            </ul>
+                        </section>
+                    }
+                }
+            </div>
+        </ChildContent>
+    </Panel>
+
+    <Panel Title="Trend" Class="min-h-0" BodyClass="p-0 flex flex-col min-h-0">
+        <Right>
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" aria-pressed="@(Ui.TrendPaused ? "true" : "false")" @onclick="TogglePause"
+                        title="@(Ui.TrendPaused ? "Resume live updates" : "Freeze the plot to inspect a transient")"
+                        class="text-meta inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 font-semibold tracking-wide normal-case @(Ui.TrendPaused ? "border-warning/55 text-warning bg-warning/10" : "border-line text-text-dim hover:text-text bg-base-900")">
+                    <Icon Name="@(Ui.TrendPaused ? "Play" : "Pause")" Size="13" />
+                    @(Ui.TrendPaused ? "PAUSED" : "LIVE")
+                </button>
+                <div role="group" aria-label="Trend time range" class="segmented">
+                    @foreach (var w in Windows)
+                    {
+                        <button key="@w" type="button" aria-pressed="@(Ui.TrendWindow == w ? "true" : "false")"
+                                @onclick="() => SetWindow(w)" class="num">@w</button>
+                    }
+                </div>
+            </div>
+        </Right>
+        <ChildContent>
+            @if (Selected.Count == 0)
+            {
+                <div class="text-text-faint text-meta flex min-h-[320px] flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
+                    <span class="text-value font-semibold">Select a parameter to trend</span>
+                    <span>Search or pick from the groups on the left. Up to @MaxPens at once.</span>
+                </div>
+            }
+            else if (_pens.Count == 0)
+            {
+                <div class="text-text-faint text-meta flex min-h-[320px] flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
+                    <span class="text-value font-semibold">Collecting data…</span>
+                    <span>The trend draws as soon as the feed delivers samples. A parameter with no tag on this feed never starts.</span>
+                </div>
+            }
+            else
+            {
+                <div class="trend-legend border-line bg-base-850 flex flex-wrap content-start gap-x-4 gap-y-1.5 border-b px-3 py-2">
+                    @foreach (var pen in _pens)
+                    {
+                        var meta = MetaFor(pen.Key);
+                        <span @key="pen.Key" class="text-meta inline-flex items-center gap-1.5">
+                            <span aria-hidden="true" class="h-[3px] w-4 rounded-full" style="background:@pen.Color"></span>
+                            <span class="text-text-dim">@pen.Label</span>
+                            <span class="text-text-faint text-micro">@pen.Unit</span>
+                            @if (meta is not null)
+                            {
+                                <ProvenanceBadge Provenance="meta.Provenance" Note="@meta.LiveNote" />
+                            }
+                        </span>
+                    }
+                    <button type="button" @onclick="ExportCsv" title="Download the plotted points as CSV"
+                            class="border-line text-text-dim hover:text-text hover:bg-base-800 text-micro ml-auto inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold">
+                        <Icon Name="Download" Size="12" />
+                        CSV
+                    </button>
+                </div>
+                @if (_lastError is not null)
+                {
+                    <p class="text-warning text-meta px-3 py-1.5">@_lastError</p>
+                }
+                <div class="trend-plot relative min-h-0 flex-1 px-2 pb-2">
+                    <TrendChart Pens="_pens" Limits="_limits" WindowMs="_windowMs" />
+                </div>
+            }
+        </ChildContent>
+    </Panel>
+</div>
+
+@code {
+    private const int MaxPens = 8;
+    private static readonly string[] Windows = ["1m", "5m", "15m", "30m", "1h"];
+
+    [Inject] private UiTickService Ticker { get; set; } = default!;
+
+    private TrendCatalogDto? _catalog;
+    private List<TrendChart.Pen> _pens = [];
+    private IReadOnlyDictionary<string, TrendLimitDto>? _limits;
+    private long _windowMs = 300_000;
+    private string _filter = string.Empty;
+    private string? _lastError;
+    private bool _atCap;
+    private DateTimeOffset _lastFetch = DateTimeOffset.MinValue;
+    private bool _fetching;
+
+    private HashSet<string> Selected => Ui.TrendSignals;
+
+    private sealed record GroupedSignals(string Group, List<TrendSignalDto> Signals);
+
+    private List<GroupedSignals> Grouped
+    {
+        get
+        {
+            if (_catalog is null) return [];
+            var needle = _filter.Trim().ToLowerInvariant();
+            bool Matches(TrendSignalDto s) => needle.Length == 0 ||
+                s.Label.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+                s.Unit.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+                s.TagName.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+                s.Group.Contains(needle, StringComparison.OrdinalIgnoreCase);
+            return _catalog.Groups
+                .Select(g => new GroupedSignals(g, _catalog.Signals.Where(s => s.Group == g && Matches(s)).ToList()))
+                .Where(g => g.Signals.Count > 0)
+                .ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ticker.Tick += OnTick;
+        _catalog = await Api.GetTrendCatalogAsync();
+        if (_catalog is null)
+        {
+            _lastError = "Trend catalogue unavailable — is the API running?";
+            return;
+        }
+        if (Selected.Count == 0)
+        {
+            foreach (var key in new[] { "speed", "rollingForce", "thickness" })
+            {
+                if (_catalog.Signals.Any(s => s.Key == key && s.AvailableOnThisFeed)) Selected.Add(key);
+            }
+        }
+        await RefreshAsync();
+    }
+
+    private void OnTick() => InvokeAsync(async () =>
+    {
+        if (Ui.TrendPaused || _fetching) return;
+        if (DateTimeOffset.UtcNow - _lastFetch < TimeSpan.FromMilliseconds(500)) return;
+        await RefreshAsync();
+        StateHasChanged();
+    });
+
+    private async Task RefreshAsync()
+    {
+        if (Selected.Count == 0) { _pens = []; _limits = null; return; }
+        _fetching = true;
+        try
+        {
+            var response = await Api.GetTrendsAsync(Selected, Ui.TrendWindow);
+            _lastFetch = DateTimeOffset.UtcNow;
+            if (response is null) { _lastError = "Trend request failed — retrying."; return; }
+            _lastError = null;
+            _windowMs = response.WindowMs;
+            _limits = response.ReferenceLines;
+            var byKey = _catalog?.Signals.ToDictionary(s => s.Key, StringComparer.Ordinal) ?? [];
+            _pens = response.Series.Where(s => byKey.ContainsKey(s.Key)).Select(series =>
+            {
+                var meta = byKey[series.Key];
+                var clean = TrendChart.WithoutGaps(series);
+                return new TrendChart.Pen(series.Key, meta.Label, meta.Unit, meta.Color, meta.Decimals, meta.IsReference, clean);
+            }).ToList();
+        }
+        finally { _fetching = false; }
+    }
+
+    private async Task Toggle(string key)
+    {
+        if (!Selected.Remove(key))
+        {
+            if (Selected.Count >= MaxPens) { _atCap = true; return; }
+            Selected.Add(key);
+        }
+        _atCap = false;
+        await RefreshAsync();
+    }
+
+    private void Clear() { Selected.Clear(); _atCap = false; _pens = []; }
+
+    private void OnFilter(ChangeEventArgs e) => _filter = e.Value?.ToString() ?? string.Empty;
+
+    private async Task SetWindow(string window) { Ui.TrendWindow = window; await RefreshAsync(); }
+
+    private async Task TogglePause()
+    {
+        Ui.TrendPaused = !Ui.TrendPaused;
+        if (!Ui.TrendPaused) await RefreshAsync();
+    }
+
+    private TrendSignalDto? MetaFor(string key) =>
+        _catalog?.Signals.FirstOrDefault(s => s.Key == key);
+
+    private static string SignalTitle(TrendSignalDto s) =>
+        s.AvailableOnThisFeed ? $"{s.TagName}\n{s.Provenance.ToWire()}" : $"{s.TagName}\nNot available on this feed.\n{s.LiveNote ?? ""}";
+
+    private static string GroupAccent(string group) => group.ToUpperInvariant() switch
+    {
+        "THICKNESS" => "var(--accent-thickness)",
+        "ROLLING" => "var(--accent-rolling)",
+        "WORK ROLL" => "var(--accent-workroll)",
+        "TENSION" => "var(--accent-tension)",
+        "DRIVE" => "var(--accent-drive)",
+        "HYDRAULIC" => "var(--accent-hydraulic)",
+        "ENERGY" => "var(--accent-energy)",
+        "COIL / STRIP" or "COIL/STRIP" => "var(--accent-coil)",
+        _ => "var(--accent-system)",
+    };
+
+    private async Task ExportCsv()
+    {
+        if (_pens.Count == 0) return;
+        var sb = new System.Text.StringBuilder();
+        sb.Append("timestamp_iso");
+        foreach (var p in _pens) sb.Append(',').Append(p.Label).Append(" (").Append(p.Unit).Append(')');
+        sb.AppendLine();
+        var n = _pens.Max(p => p.Points.Length);
+        for (var i = 0; i < n; i++)
+        {
+            var t = _pens.Select(p => p.Times.Length > i ? p.Times[i] : 0L).Max();
+            sb.Append(t > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(t).ToString("o") : "");
+            foreach (var p in _pens)
+            {
+                sb.Append(',');
+                if (p.Points.Length > i) sb.Append(JsNumber.ToFixed(p.Points[i], p.Decimals));
+            }
+            sb.AppendLine();
+        }
+        try { await JS.InvokeVoidAsync("crm04Download", $"crm04-trend-{Ui.TrendWindow}.csv", "text/csv;charset=utf-8", sb.ToString()); }
+        catch { /* download helper absent — plot remains */ }
+    }
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

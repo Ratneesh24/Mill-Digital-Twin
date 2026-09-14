@@ -1,0 +1,5 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { ReadoutRow, DerivedRow } from '../common/ValueReadout';
+export function ParameterGroup({ title, accent, icon, rows, footer, }) {
+    return (_jsxs("section", { className: "param-group border-line bg-base-900 border", style: { '--group-accent': accent }, children: [_jsxs("h3", { className: "param-group-title flex items-center gap-2", children: [icon && (_jsx("span", { "aria-hidden": true, className: "inline-flex items-center", children: icon })), _jsx("span", { className: "truncate", children: title })] }), _jsxs("div", { className: "px-4 py-2.5", children: [rows.map((row) => row.derived ? (_jsx(DerivedRow, { label: row.label, value: row.derived.value, unit: row.derived.unit, tone: row.derived.tone, title: row.derived.title }, row.label)) : (_jsx(ReadoutRow, { label: row.label, tagName: row.tagName, decimals: row.decimals, scale: row.scale, unitOverride: row.unitOverride, signed: row.signed }, row.label))), footer] })] }));
+}

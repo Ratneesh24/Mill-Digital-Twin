@@ -112,7 +112,7 @@ export function MillHealth() {
         <ReadoutRow label="Upper WR bending" tagName="WR.TOP.BENDING" decimals={0} />
         <div className="flex items-baseline justify-between gap-3 py-[3px]">
           <span className="label">Rolled length since change</span>
-          <span className="text-prov-notag border-prov-notag/60 border border-dashed px-1 text-[9px] leading-[14px]">
+          <span className="text-prov-notag border-prov-notag/60 border border-dashed px-1 text-micro leading-[14px]">
             NO TAG · PHASE 4
           </span>
         </div>

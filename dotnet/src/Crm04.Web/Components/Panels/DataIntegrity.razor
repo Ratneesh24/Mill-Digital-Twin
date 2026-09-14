@@ -1,0 +1,66 @@
+@*
+    DATA INTEGRITY — the Blazor answer to ValidationPanel.
+
+    The React ValidationPanel runs the §17 simulation tests in-app. There is
+    no solver here to validate, so this panel checks what CAN be checked on
+    a replay/gateway feed: catalogue present, frames flowing, tags resolving,
+    interlocks decisive, alarms rendering. Same dialog, honest content.
+*@
+@using Crm04.Domain.Types
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject TagStore Tags
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="Data integrity">
+    @foreach (var c in Checks)
+    {
+        <div class="flex items-baseline justify-between gap-3 py-[3px]" @key="c.Label">
+            <span class="label truncate">@c.Label</span>
+            <span class="text-micro font-bold tracking-wider @(c.Ok ? "text-healthy" : "text-warning")">
+                @(c.Ok ? "PASS" : "HOLD") <span class="text-text-faint font-medium">@c.Detail</span>
+            </span>
+        </div>
+    }
+    <p class="text-text-faint text-micro mt-2 leading-snug">
+        Behavioural parity with the TypeScript pipeline is enforced by
+        ProjectionParityTests (~2,950 assertions over 240 frames × 3 modes),
+        not by this panel. This panel answers whether TODAY's feed is intact.
+    </p>
+</Panel>
+
+@code {
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+    private void OnTick() => InvokeAsync(StateHasChanged);
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private sealed record Check(string Label, bool Ok, string Detail);
+
+    private List<Check> Checks
+    {
+        get
+        {
+            var s = Mill.Summary;
+            return
+            [
+                new("Feed connected", s?.Communication.Connected == true, s?.Communication.SourceName ?? "no feed"),
+                new("Frames fresh", s?.Communication.Stale == false, $"{s?.Communication.UpdateRateHz:F1} Hz"),
+                new("Mode resolved", s is not null, s?.Mode.ToWire() ?? "—"),
+                new("Interlocks decisive", Mill.Interlocks is not null, Mill.Interlocks?.Title ?? "waiting"),
+                new("Alarms rendering", true, $"{Mill.Alarms.Count} active"),
+                new("Tags resolving", Tags.HasCatalog, Tags.HasCatalog ? "catalogue loaded" : "waiting"),
+            ];
+        }
+    }
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

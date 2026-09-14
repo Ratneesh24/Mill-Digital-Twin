@@ -1,0 +1,36 @@
+@*
+    COLLAPSIBLE - shadcn Collapsible spirit: header button + animated height.
+
+    The animation is the CSS grid-rows trick (0fr/1fr), so no JS measuring and no hardcoded
+    pixel heights. Reduced-motion users get an instant toggle.
+*@
+<div class="@Class">
+    <button type="button" @onclick="Toggle" aria-expanded="@(!Collapsed)"
+            class="ui-collapsible-head">
+        <span class="ui-collapsible-chevron @(Collapsed ? "" : "ui-collapsible-chevron-open")"
+              aria-hidden="true">▸</span>
+        <span class="min-w-0 flex-1 text-left">@Header</span>
+        @Extra
+    </button>
+    <div class="ui-collapsible-body @(Collapsed ? "ui-collapsible-shut" : "")">
+        <div class="min-h-0 min-w-0 overflow-hidden">
+            @ChildContent
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment Header { get; set; } = default!;
+
+    [Parameter] public RenderFragment? Extra { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public bool Collapsed { get; set; }
+
+    [Parameter] public EventCallback<bool> CollapsedChanged { get; set; }
+
+    [Parameter] public string Class { get; set; } = "";
+
+    private Task Toggle() => CollapsedChanged.InvokeAsync(!Collapsed);
+}

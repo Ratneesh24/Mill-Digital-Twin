@@ -1,0 +1,132 @@
+@*
+    HEADER - machine identity, connection state, MODEL / DATA status, navigation.
+
+    Sticky command bar for the workspace. SIMULATED VALUES ARE NEVER PRESENTED AS PLANT DATA:
+    the operating-mode selector and the MODEL / DATA chip in this bar say so on every page,
+    at all times - the per-page context strip was removed as duplication (state, pass,
+    direction, speed and coil all repeat in the operating context and hero below).
+*@
+@using Crm04.Domain.Configuration
+@using Crm04.Domain.Machine
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<header class="brand-header border-line bg-base-900/95 shrink-0 border-b backdrop-blur">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 lg:px-6">
+        <div class="flex min-w-0 items-center gap-3">
+            <div class="flex flex-col leading-none">
+                <span class="brand-wordmark" aria-label="Tata Steel">TATA STEEL</span>
+                <span class="text-text-faint mt-1 text-micro font-semibold tracking-[0.22em]">
+                    CRM SAHIBABAD &middot; NARROW COMPLEX
+                </span>
+            </div>
+            <span aria-hidden="true" class="bg-line hidden h-10 w-px sm:block"></span>
+
+            @* Bounded so it TRUNCATES rather than wraps. The row is flex-wrap, and a wrapping
+               flex line pushes items to a new row instead of shrinking them. *@
+            <div class="hidden min-w-0 max-w-[380px] min-[1700px]:block">
+                <div class="text-text truncate text-body font-semibold tracking-wide">
+                    @MillConfig.Default.Identity.Mill &middot; 4HI REVERSING COLD ROLLING MILL
+                </div>
+                <div class="text-text-faint mt-0.5 truncate text-meta tracking-wide">
+                    @MillConfig.Default.Identity.Plant &middot; DIGITAL TWIN &middot; COIL @CoilId
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-1"></div>
+
+        @if (Mill.Alarms.Count > 0)
+        {
+            <div role="status" class="@AlarmPillClass">
+                <span aria-hidden="true" class="@(Worst is AlarmSeverity.Trip or AlarmSeverity.Alarm ? "h-2 w-2 rounded-full bg-alarm" : "h-2 w-2 rounded-full bg-warning")"></span>
+                @Mill.Alarms.Count ACTIVE @(Mill.Alarms.Count == 1 ? "ALARM" : "ALARMS")
+            </div>
+        }
+
+        <ConnectionStatus />
+
+        <ModelDataStatus />
+
+        <button type="button" @onclick="Ui.ToggleTheme" aria-pressed="@(Ui.Theme == "dark" ? "true" : "false")"
+                aria-label="@(Ui.Theme == "dark" ? "Switch to light theme" : "Switch to dark theme")"
+                class="border-line text-text-dim hover:text-text hover:bg-base-800 inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-meta font-semibold">
+            <Icon Name="@(Ui.Theme == "dark" ? "Sun" : "Moon")" Size="15" />
+            <span class="hidden sm:inline">@(Ui.Theme == "dark" ? "LIGHT" : "DARK")</span>
+        </button>
+
+        <div class="num text-text-dim bg-base-950 border-line shrink-0 rounded-md border px-2.5 py-1.5 text-meta"
+             aria-label="Last update time">
+            @Clock
+        </div>
+    </div>
+
+    <div class="border-line bg-base-850 flex flex-wrap items-center gap-x-4 gap-y-2 border-t px-4 py-2 lg:px-6">
+        <nav aria-label="Workspace pages" class="workspace-nav flex max-w-full flex-wrap items-center gap-1">
+            @foreach (var item in Nav)
+            {
+                @* NavLink emits aria-current="page", which is what the .workspace-nav underline
+                   rule in the stylesheet keys on. Do not replace it with a plain anchor. *@
+                <NavLink href="@item.Href" Match="@(item.Href == "/dashboard" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                         class="text-meta relative inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 font-semibold tracking-[0.08em] transition-colors text-text-dim hover:text-text hover:bg-base-800"
+                         ActiveClass="text-brand" @key="item.Href">
+                    <Icon Name="@item.Icon" Size="14" />
+                    @item.Label
+                </NavLink>
+            }
+        </nav>
+    </div>
+</header>
+
+@code {
+    [Inject] private UiStore Ui { get; set; } = default!;
+
+    private sealed record NavItem(string Href, string Label, string Icon);
+
+    /// <summary>Exactly three pages. Everything else lives behind MODEL / DATA STATUS.</summary>
+    private static readonly NavItem[] Nav =
+    [
+        new("/dashboard", "DASHBOARD", "LayoutDashboard"),
+        new("/trends", "REAL-TIME TRENDS", "Activity"),
+        new("/3d-twin", "3D DIGITAL TWIN", "Box"),
+    ];
+
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private string CoilId => Mill.Summary?.CoilId ?? "—";
+
+    private AlarmSeverity Worst => Mill.Alarms.Count == 0
+        ? AlarmSeverity.Info
+        : Mill.Alarms.Max(a => a.Severity);
+
+    private string AlarmPillClass =>
+        "inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-meta font-semibold tracking-wide " +
+        Worst switch
+        {
+            AlarmSeverity.Trip => "border-trip/60 text-trip bg-trip/10 alarm-pulse",
+            AlarmSeverity.Alarm => "border-alarm/60 text-alarm bg-alarm/10",
+            _ => "border-warning/50 text-warning bg-warning/10",
+        };
+
+    private string Clock => Mill.Summary?.Communication.LastFrameTimestamp is { } ts && ts > 0
+        ? DateTimeOffset.FromUnixTimeMilliseconds(ts).ToLocalTime().ToString("h:mm:ss tt")
+        : "--:--:--";
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

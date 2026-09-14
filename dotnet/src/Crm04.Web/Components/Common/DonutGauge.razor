@@ -1,0 +1,44 @@
+@*
+    Donut gauge for the drive-load card. Port of DonutGauge in src/components/ui/primitives.tsx.
+
+    The arc is a stroked circle with a dash offset rather than an arc path, which is why it
+    animates smoothly with a single CSS transition on one property.
+*@
+@using System.Globalization
+
+<div role="img" aria-label="@(AriaLabel ?? $"{Math.Round(Pct)} percent")"
+     class="relative grid shrink-0 place-items-center"
+     style="width:@(Size)px;height:@(Size)px">
+    <svg width="@Size" height="@Size" class="-rotate-90">
+        <circle cx="@(Size / 2.0)" cy="@(Size / 2.0)" r="@F(R)" fill="none" stroke="@Track" stroke-width="@Stroke" />
+        <circle cx="@(Size / 2.0)" cy="@(Size / 2.0)" r="@F(R)" fill="none" stroke="@Tone"
+                stroke-width="@Stroke" stroke-linecap="round"
+                stroke-dasharray="@F(C)" stroke-dashoffset="@F(C - Pct / 100d * C)"
+                style="transition:stroke-dashoffset 500ms ease" />
+    </svg>
+    <div class="absolute inset-0 grid place-items-center">@ChildContent</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public double Value { get; set; }
+
+    [Parameter] public int Size { get; set; } = 92;
+
+    [Parameter] public int Stroke { get; set; } = 10;
+
+    [Parameter] public string Tone { get; set; } = "var(--color-normal)";
+
+    [Parameter] public string Track { get; set; } = "var(--color-base-800)";
+
+    [Parameter] public string? AriaLabel { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private double Pct => Math.Clamp(double.IsFinite(Value) ? Value : 0d, 0d, 100d);
+
+    private double R => (Size - Stroke) / 2.0;
+
+    private double C => 2 * Math.PI * R;
+
+    private static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+}

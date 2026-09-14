@@ -13,7 +13,7 @@
 import { useMemo, useRef } from 'react'
 import { Color, type InstancedMesh, type MeshStandardMaterial, Object3D } from 'three'
 import { useTwinFrame } from './TwinContext'
-import { SCENE, SCENE_COLORS } from './twinMaterials'
+import { LINE, SCENE_COLORS } from './twinMaterials'
 
 const CHEVRONS_PER_SPAN = 7
 const dummy = new Object3D()
@@ -36,7 +36,7 @@ export function TensionSystem() {
  */
 function ChevronRun({ sideX }: { sideX: -1 | 1 }) {
   const meshRef = useRef<InstancedMesh>(null)
-  const spanLength = SCENE.reelX
+  const spanLength = Math.abs(sideX === -1 ? LINE.etrX : LINE.dtrX)
 
   const offsets = useMemo(
     () =>

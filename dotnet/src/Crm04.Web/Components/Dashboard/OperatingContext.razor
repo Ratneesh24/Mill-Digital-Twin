@@ -1,0 +1,99 @@
+@*
+    OPERATING CONTEXT - the six facts that frame everything else on the screen.
+
+      COIL - GRADE - WIDTH - PASS - DIRECTION - MILL STATE
+
+    Sits directly under the page title so process context is established before the operator reads
+    a single number. Deliberately NOT a KPI row: these are identity and state, not measurements,
+    so they get no setpoint and no deviation.
+
+    Port of src/components/dashboard/OperatingContext.tsx.
+*@
+@using Crm04.Domain.Machine
+@using Crm04.Domain.Types
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<section aria-label="Operating context" class="operating-context border-line bg-base-900 border">
+    <ContextCell Label="CURRENT COIL" Icon="Boxes">
+        <span class="num text-text text-value font-semibold">@CoilId</span>
+    </ContextCell>
+
+    <ContextCell Label="GRADE" Icon="Layers">
+        @if (Grade is { Length: > 0 })
+        {
+            <span class="text-text text-body font-semibold">@Grade</span>
+        }
+        else
+        {
+            @* No grade on the feed means it has to be joined from MES. Say so with the readout
+               rather than printing an empty string that reads as "no grade". *@
+            <ValueReadout TagName="COIL.GRADE" Size="sm" />
+        }
+    </ContextCell>
+
+    <ContextCell Label="WIDTH" Icon="Ruler">
+        <ValueReadout TagName="STRIP.WIDTH" Size="md" Decimals="0" HideBadge="true" />
+    </ContextCell>
+
+    <ContextCell Label="CURRENT PASS" Icon="Repeat2">
+        <span class="num text-text text-value font-semibold">
+            @Pass.current<span class="text-text-faint text-body"> / @Pass.total</span>
+        </span>
+        <div class="mt-1.5 w-full max-w-[140px]">
+            <div class="bg-base-800 h-1.5 w-full overflow-hidden rounded-full"
+                 role="progressbar" aria-valuenow="@PassPercent" aria-valuemin="0" aria-valuemax="100"
+                 aria-label="Pass @Pass.current of @Pass.total">
+                <div class="bg-brand h-full rounded-full transition-all" style="width:@(PassPercent)%"></div>
+            </div>
+        </div>
+    </ContextCell>
+
+    <ContextCell Label="DIRECTION" Icon="MoveHorizontal">
+        <span class="text-value inline-flex items-center gap-1.5 font-semibold @(Forward ? "text-normal" : "text-prov-simulated")">
+            <Icon Name="@(Forward ? "ArrowRight" : "ArrowLeft")" Size="17" />
+            @Direction
+        </span>
+    </ContextCell>
+
+    <ContextCell Label="MILL STATE" Icon="Activity" Live="@(Status == MachineStatus.Rolling)">
+        <span class="num text-value font-semibold tracking-tight @StateTone">@StatusLabel</span>
+    </ContextCell>
+</section>
+
+@code {
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private string CoilId => Mill.Summary?.CoilId ?? "—";
+    private string? Grade => Mill.Summary?.CoilGrade;
+    private (int current, int total) Pass => (Mill.Summary?.PassCurrent ?? 0, Mill.Summary?.PassTotal ?? 0);
+    private double PassPercent => Pass.total > 0 ? (double)Pass.current / Pass.total * 100d : 0d;
+    private bool Forward => (Mill.Summary?.Direction ?? RollingDirection.Forward) == RollingDirection.Forward;
+    private string Direction => Mill.Summary?.Direction.ToWire() ?? "FORWARD";
+    private MachineStatus Status => Mill.Summary?.MachineStatus ?? MachineStatus.Idle;
+    private string StatusLabel => MachineStatusRules.Label(Status);
+
+    private string StateTone => Status switch
+    {
+        MachineStatus.Rolling => "text-healthy",
+        MachineStatus.FastStop or MachineStatus.Fault => "text-trip alarm-pulse",
+        MachineStatus.Reversing or MachineStatus.Decelerating => "text-warning",
+        _ => "text-text-dim",
+    };
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

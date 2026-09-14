@@ -1,0 +1,82 @@
+@*
+    Compact label + value row, used across the detail panels.
+
+    Port of ReadoutRow in src/components/common/ValueReadout.tsx. The label is ours; the value is
+    ValueReadout's, always.
+
+    Interactive: click locates the tag on the mill schematic (region pulse + row flash);
+    double-click opens its trend on the trends page. Both are no-ops for derived rows, which have
+    no tag to locate.
+*@
+@using Crm04.Web.State
+@inject UiStore Ui
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject UiTickService Ticker
+@implements IDisposable
+
+<div class="flex items-baseline justify-between gap-3 py-[3px] row-clickable @(Located ? "row-located" : "")"
+     @onclick="Locate" @ondblclick="OpenTrend"
+     title="Click to locate on the mill - double-click for trend">
+    <span class="label truncate">@Label</span>
+    <ValueReadout TagName="@TagName" Size="sm" Decimals="Decimals" Scale="Scale"
+                  UnitOverride="@UnitOverride" Signed="@Signed" HideBadge="@HideBadge" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string TagName { get; set; } = default!;
+
+    [Parameter] public int? Decimals { get; set; }
+
+    [Parameter] public double Scale { get; set; } = 1d;
+
+    [Parameter] public string? UnitOverride { get; set; }
+
+    [Parameter] public bool Signed { get; set; }
+
+    [Parameter] public bool HideBadge { get; set; }
+
+    private bool Located => Ui.HighlightTag == TagName;
+
+    private bool _seenLocated;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Located == _seenLocated) return false;
+        _seenLocated = Located;
+        return true;
+    }
+
+    private async Task Locate()
+    {
+        Ui.HighlightTag = TagName;
+        Ui.HighlightGroup = null;
+        try { await JS.InvokeVoidAsync("crm04ScrollTo", "mill-schematic"); }
+        catch { /* helper absent - highlight still shows */ }
+    }
+
+    private async Task OpenTrend()
+    {
+        try
+        {
+            var catalog = await Api.GetTrendCatalogAsync();
+            var signal = catalog?.Signals.FirstOrDefault(s =>
+                s.TagName == TagName && s.AvailableOnThisFeed);
+            if (signal is null) return;
+
+            Ui.TrendSignals.Clear();
+            Ui.TrendSignals.Add(signal.Key);
+            Nav.NavigateTo("/trends");
+        }
+        catch { /* catalogue unreachable - stay put */ }
+    }
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

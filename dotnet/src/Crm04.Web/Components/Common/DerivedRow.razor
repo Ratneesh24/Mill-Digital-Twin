@@ -1,0 +1,41 @@
+@*
+    A value that is NOT a tag - a derived engineering indicator such as utilisation, or a
+    configuration constant.
+
+    Port of DerivedRow in src/components/common/ValueReadout.tsx. Rendered in the dimmer "derived"
+    treatment so it can never be confused with a measurement, and it exists precisely so nobody is
+    tempted to bind ValueReadout to an invented tag name to show a computed number.
+*@
+
+<div class="flex items-baseline justify-between gap-3 py-[3px]" title="@Title">
+    <span class="label truncate">@Label</span>
+    <span class="inline-flex items-baseline gap-1.5">
+        <span class="num text-body @ToneClass">@Value</span>
+        @if (Unit is not null)
+        {
+            <span class="text-text-faint text-micro">@Unit</span>
+        }
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Value { get; set; } = default!;
+
+    [Parameter] public string? Unit { get; set; }
+
+    /// <summary>"normal" | "warning" | "alarm" | "healthy" | "dim".</summary>
+    [Parameter] public string Tone { get; set; } = "normal";
+
+    [Parameter] public string? Title { get; set; }
+
+    private string ToneClass => Tone switch
+    {
+        "warning" => "text-warning",
+        "alarm" => "text-alarm",
+        "healthy" => "text-healthy",
+        "dim" => "text-text-faint",
+        _ => "text-text",
+    };
+}

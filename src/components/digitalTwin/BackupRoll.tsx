@@ -33,6 +33,8 @@ export function BackupRoll({ side }: Props) {
 
   const r = SCENE.burRadius
   const halfBarrel = SCENE.barrelLength / 2
+  const neckR = SCENE.burNeckRadius
+  const neckLength = neckR * 1.1
 
   return (
     <group ref={liftRef}>
@@ -43,15 +45,22 @@ export function BackupRoll({ side }: Props) {
             <meshStandardMaterial {...MATERIALS.backupRoll} />
           </mesh>
 
+          {/*
+            Necks sized to the Timken TQO bore the roll runs in (Ø317.500,
+            §10.4 item 20) rather than a fraction of the barrel. On a Ø550
+            back-up that is well over half the barrel diameter, which is exactly
+            why these bearings are the ones with a 1500-hour turn-the-cones
+            regime (§11.4).
+          */}
           {[-1, 1].map((s) => (
-            <mesh key={s} position={[0, s * (halfBarrel + 0.13), 0]} castShadow>
-              <cylinderGeometry args={[r * 0.46, r * 0.46, 0.26, 28]} />
+            <mesh key={s} position={[0, s * (halfBarrel + neckLength / 2), 0]} castShadow>
+              <cylinderGeometry args={[neckR, neckR, neckLength, 28]} />
               <meshStandardMaterial {...MATERIALS.backupRollChock} />
             </mesh>
           ))}
 
-          <mesh position={[0, halfBarrel + 0.261, r * 0.4]} castShadow>
-            <boxGeometry args={[0.05, 0.014, r * 0.42]} />
+          <mesh position={[0, halfBarrel + neckLength + 0.001, neckR * 0.55]} castShadow>
+            <boxGeometry args={[0.04, 0.012, neckR * 0.6]} />
             <meshStandardMaterial {...MATERIALS.rollMarker} />
           </mesh>
         </group>
@@ -61,8 +70,29 @@ export function BackupRoll({ side }: Props) {
           operator's line of sight into the roll stack, and an oversized chock
           hides the one thing the scene exists to show. */}
       {[-1, 1].map((s) => (
-        <mesh key={s} position={[0, 0, s * (halfBarrel + 0.26)]} castShadow receiveShadow>
-          <boxGeometry args={[r * 1.05, r * 1.2, 0.24]} />
+        <mesh
+          key={s}
+          position={[0, 0, s * (halfBarrel + neckLength / 2)]}
+          castShadow
+          receiveShadow
+        >
+          <boxGeometry args={[neckR * 2.1, neckR * 2.4, neckLength]} />
+          <meshStandardMaterial {...MATERIALS.backupRollChock} />
+        </mesh>
+      ))}
+
+      {/*
+        Felt back-up roll wipers (§6.6) — spring loaded onto the barrel from a
+        holder on cross beams bolted to the chock inner faces. They ride the roll
+        surface, so they move up and down with the stack.
+      */}
+      {[-1, 1].map((s) => (
+        <mesh
+          key={`wiper-${s}`}
+          position={[s * r * 0.72, side === 'UPPER' ? r * 0.72 : -r * 0.72, 0]}
+          castShadow
+        >
+          <boxGeometry args={[0.05, 0.04, SCENE.barrelLength * 0.96]} />
           <meshStandardMaterial {...MATERIALS.backupRollChock} />
         </mesh>
       ))}

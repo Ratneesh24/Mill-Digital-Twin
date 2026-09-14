@@ -39,7 +39,7 @@ export function SignalChart({ signal, window = '5m', height = 132, references = 
   const tag = useMachineStore((s) => s.tags[descriptor.tagName])
 
   return (
-    <div className="bg-base-850 border-line rounded-lg border p-2.5">
+    <div className="bg-base-850 border-line rounded-2xl border p-2.5 shadow-card">
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <span className="label truncate">
           {descriptor.label}{' '}
@@ -49,7 +49,7 @@ export function SignalChart({ signal, window = '5m', height = 132, references = 
       </div>
       <div style={{ height }}>
         {points.length < 2 ? (
-          <div className="text-text-faint flex h-full items-center justify-center text-[11px]">
+          <div className="text-text-faint flex h-full items-center justify-center text-meta">
             Collecting data…
           </div>
         ) : (
@@ -65,25 +65,28 @@ export function SignalChart({ signal, window = '5m', height = 132, references = 
               <XAxis dataKey="timestamp" hide />
               <YAxis
                 stroke="var(--color-line-bright)"
-                tick={{ fontSize: 10, fill: 'var(--color-text-faint)' }}
+                tick={{ fontSize: 11, fill: 'var(--color-text-faint)' }}
                 width={48}
                 domain={['auto', 'auto']}
               />
               <Tooltip
                 contentStyle={{
-                  background: '#ffffff',
+                  background: 'var(--color-base-900)',
                   border: '1px solid var(--color-line-bright)',
-                  borderRadius: 10,
+                  borderRadius: 12,
                   fontSize: 12,
                   color: 'var(--color-text)',
-                  boxShadow: '0 8px 24px rgb(23 43 77 / 12%)',
+                  boxShadow: 'var(--shadow-pop)',
                 }}
                 labelStyle={{ color: 'var(--color-text-dim)', fontWeight: 600 }}
                 labelFormatter={(value) => new Date(Number(value)).toLocaleTimeString()}
-                formatter={(value: number) => [
-                  `${value.toFixed(descriptor.decimals)} ${descriptor.unit}`,
-                  descriptor.label,
-                ]}
+                formatter={(value) => {
+                  const v = typeof value === 'number' ? value : Number(value)
+                  return [
+                    `${Number.isFinite(v) ? v.toFixed(descriptor.decimals) : '—'} ${descriptor.unit}`,
+                    descriptor.label,
+                  ]
+                }}
               />
               {references.map((ref) => (
                 <ReferenceLine
@@ -95,7 +98,7 @@ export function SignalChart({ signal, window = '5m', height = 132, references = 
                   label={{
                     value: ref.label,
                     fill: ref.color,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: 600,
                     position: 'insideTopRight',
                   }}

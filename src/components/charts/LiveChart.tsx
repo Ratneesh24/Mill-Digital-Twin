@@ -11,6 +11,8 @@
  */
 
 import { useMemo } from 'react'
+import * as ToggleGroup from '@radix-ui/react-toggle-group'
+import { Activity, ChartLine, MousePointerClick } from 'lucide-react'
 import {
   CartesianGrid,
   Line,
@@ -26,6 +28,7 @@ import { useMachineStore } from '../../store/machineStore'
 import { useUiStore } from '../../store/uiStore'
 import { useMergedTrend } from '../../utils/useTelemetry'
 import { TREND_WINDOWS, type TelemetrySignal, type TrendWindowKey } from '../../types/telemetry'
+import { cn } from '../ui/cn'
 import { ProvenanceBadge } from '../common/ProvenanceBadge'
 import { Panel } from '../common/Panel'
 
@@ -39,20 +42,16 @@ export function LiveChart() {
 
   return (
     <Panel
-      title="Live trend"
+      title="Live trends"
       right={
-        <div role="group" aria-label="Trend time window" className="flex gap-1">
+        <div role="group" aria-label="Trend time window" className="segmented">
           {WINDOW_KEYS.map((key) => (
             <button
               key={key}
               type="button"
               aria-pressed={window === key}
               onClick={() => setWindow(key)}
-              className={`num min-h-8 rounded-md border px-2 text-[11px] font-medium transition-colors ${
-                window === key
-                  ? 'border-normal bg-normal text-white'
-                  : 'border-line text-text-dim hover:text-text hover:bg-base-800 bg-base-900'
-              }`}
+              className="num"
             >
               {key}
             </button>
@@ -60,15 +59,27 @@ export function LiveChart() {
         </div>
       }
       bodyClassName="p-0 flex flex-col"
+      className="h-full"
     >
       <SignalLegend selected={signals} onToggle={toggleSignal} />
-      <div className="min-h-0 flex-1 px-2 pb-2">
+      {/* Height comes from `.live-trend-plot` (index.css), not from flex-1 —
+          see the height-contract comment there. */}
+      <div className="live-trend-plot">
         <TrendPlot signals={signals} window={window} />
       </div>
     </Panel>
   )
 }
 
+/**
+ * Radix ToggleGroup in `multiple` mode, which renders the Root as
+ * `role="group"` and each Item as a `<button aria-pressed>` — exactly the ARIA
+ * this was hand-rolling, so the styling and the smoke assertions are unchanged.
+ *
+ * The trend-*window* switcher above deliberately stays hand-rolled: single mode
+ * emits `aria-checked` instead, and `.segmented > button[aria-pressed='true']`
+ * is what paints the active pill blue.
+ */
 function SignalLegend({
   selected,
   onToggle,
@@ -79,26 +90,34 @@ function SignalLegend({
   const tags = useMachineStore((s) => s.tags)
 
   return (
-    <div
-      role="group"
+    <ToggleGroup.Root
+      type="multiple"
+      value={selected}
+      // Radix hands back the whole next array; diff it against the current
+      // selection so the store keeps its single-signal toggle action.
+      onValueChange={(next) => {
+        const added = next.find((k) => !selected.includes(k as TelemetrySignal))
+        const removed = selected.find((k) => !next.includes(k))
+        const changed = (added ?? removed) as TelemetrySignal | undefined
+        if (changed) onToggle(changed)
+      }}
       aria-label="Trend signals"
-      className="border-line bg-base-850 flex flex-wrap gap-1.5 border-b px-2.5 py-2"
+      className="live-trend-legend border-line bg-base-850 flex flex-wrap content-start gap-1.5 border-b px-3 py-3"
     >
       {SIGNALS.map((signal) => {
         const active = selected.includes(signal.key)
         const tag = tags[signal.tagName]
         return (
-          <button
+          <ToggleGroup.Item
             key={signal.key}
-            type="button"
-            aria-pressed={active}
+            value={signal.key}
             title={`${signal.label} (${signal.unit}) — ${active ? 'hide' : 'show'} on trend`}
-            onClick={() => onToggle(signal.key)}
-            className={`flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium tracking-wide transition-colors ${
+            className={cn(
+              'flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 py-1 text-meta font-medium tracking-wide transition-colors',
               active
                 ? 'border-normal/50 text-text bg-base-900 shadow-sm'
-                : 'border-line text-text-faint hover:text-text-dim bg-base-900'
-            }`}
+                : 'border-line text-text-faint hover:text-text-dim bg-base-900',
+            )}
           >
             <span
               aria-hidden="true"
@@ -109,10 +128,10 @@ function SignalLegend({
             {active && tag && (
               <ProvenanceBadge provenance={tag.provenance} quality={tag.quality} />
             )}
-          </button>
+          </ToggleGroup.Item>
         )
       })}
-    </div>
+    </ToggleGroup.Root>
   )
 }
 
@@ -133,17 +152,22 @@ function TrendPlot({
 
   if (signals.length === 0) {
     return (
-      <div className="text-text-faint flex h-full min-h-[120px] flex-col items-center justify-center gap-1 text-[12px]">
+      <div className="text-text-faint flex h-full min-h-[300px] flex-col items-center justify-center gap-2 text-meta">
+        <MousePointerClick size={22} aria-hidden className="opacity-60" />
         <span className="font-medium">Select a signal to trend</span>
-        <span className="text-[11px]">Use the pills above to add mill speed, force, gap and more.</span>
+        <span className="text-meta">Use the pills above to add mill speed, force, gap and more.</span>
       </div>
     )
   }
 
   if (rows.length < 2) {
     return (
-      <div className="text-text-faint flex h-full min-h-[120px] items-center justify-center text-[12px]">
-        Collecting data…
+      <div className="text-text-faint flex h-full min-h-[300px] flex-col items-center justify-center gap-2 text-meta">
+        <Activity size={22} aria-hidden className="opacity-60" />
+        <span className="font-medium">Collecting data…</span>
+        <span className="flex items-center gap-1 text-meta">
+          <ChartLine size={13} aria-hidden /> The trend draws as soon as the feed delivers samples.
+        </span>
       </div>
     )
   }
@@ -156,7 +180,7 @@ function TrendPlot({
           dataKey="timestamp"
           tickFormatter={formatTime}
           stroke="var(--color-line-bright)"
-          tick={{ fontSize: 10, fill: 'var(--color-text-faint)' }}
+          tick={{ fontSize: 11, fill: 'var(--color-text-faint)' }}
           minTickGap={40}
         />
         {/*
@@ -170,27 +194,28 @@ function TrendPlot({
             yAxisId={key}
             hide={index > 0}
             stroke="var(--color-line-bright)"
-            tick={{ fontSize: 10, fill: 'var(--color-text-faint)' }}
+            tick={{ fontSize: 11, fill: 'var(--color-text-faint)' }}
             width={46}
             domain={['auto', 'auto']}
           />
         ))}
         <Tooltip
           contentStyle={{
-            background: '#ffffff',
+            background: 'var(--color-base-900)',
             border: '1px solid var(--color-line-bright)',
-            borderRadius: 10,
+            borderRadius: 12,
             fontSize: 12,
             color: 'var(--color-text)',
-            boxShadow: '0 8px 24px rgb(23 43 77 / 12%)',
+            boxShadow: 'var(--shadow-pop)',
           }}
           labelStyle={{ color: 'var(--color-text-dim)', fontWeight: 600 }}
           labelFormatter={(value) => new Date(Number(value)).toLocaleTimeString()}
-          formatter={(value: number, name: string) => {
+          formatter={(value, name) => {
             const descriptor = SIGNAL_BY_KEY[name as TelemetrySignal]
+            const v = typeof value === 'number' ? value : Number(value)
             return [
-              `${value.toFixed(descriptor?.decimals ?? 1)} ${descriptor?.unit ?? ''}`,
-              descriptor?.label ?? name,
+              `${Number.isFinite(v) ? v.toFixed(descriptor?.decimals ?? 1) : '—'} ${descriptor?.unit ?? ''}`,
+              descriptor?.label ?? String(name),
             ]
           }}
         />

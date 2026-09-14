@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Crm04.Contracts - the wire format between Crm04.Api and Crm04.Web.
+
+    It exists so the two can share DTO definitions WITHOUT Crm04.Web referencing Crm04.Api or
+    Crm04.Persistence. The web app must not be able to reach Oracle or to construct a
+    MachineState of its own; giving it a reference to the contracts and nothing else is what
+    keeps that structurally true rather than merely intended.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Crm04.Contracts</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Crm04.Domain\Crm04.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

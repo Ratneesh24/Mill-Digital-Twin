@@ -1,0 +1,69 @@
+@*
+    FEED DIAGNOSTICS — "is what I am looking at current?".
+
+    The feed's own vital signs: source, publish rate, frame age, pipeline
+    cost. Engineering data, deliberately NOT in the header — only link health
+    belongs up there. Port of the FeedDiagnostics section in
+    src/components/panels/FeedDiagnostics.tsx.
+*@
+@using Crm04.Contracts
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject ApiClient Api
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="Feed diagnostics">
+    @if (_diag is null)
+    {
+        <p class="text-text-faint text-meta">Loading feed health…</p>
+    }
+    else
+    {
+        <DerivedRow Label="Source" Value="@_diag.SourceId" Tone="dim" />
+        <DerivedRow Label="Running" Value="@(_diag.Running ? "YES" : "NO")" Tone="@(_diag.Running ? "healthy" : "alarm")" />
+        <DerivedRow Label="Publish rate" Value="@JsNumber.ToFixed(_diag.PublishRateHz, 1)" Unit="Hz" Tone="dim" />
+        <DerivedRow Label="Frame age" Value="@JsNumber.ToFixed(_diag.LastFrameAgeMs, 0)" Unit="ms" Tone="@(_diag.Stale ? "warning" : "dim")" />
+        <DerivedRow Label="Frame" Value="@_diag.FrameId.ToString()" Tone="dim" />
+        <DerivedRow Label="Tags in frame" Value="@(_diag.TagsInFrame.ToString())" Tone="dim" />
+        <DerivedRow Label="Catalogue" Value="@(_diag.CatalogueSize.ToString())" Tone="dim" />
+        <DerivedRow Label="Pipeline p50" Value="@JsNumber.ToFixed(_diag.PipelineMsP50, 1)" Unit="ms" Tone="dim" />
+        <DerivedRow Label="Pipeline p99" Value="@JsNumber.ToFixed(_diag.PipelineMsP99, 1)" Unit="ms" Tone="dim" />
+        <p class="text-text-faint text-micro mt-2 leading-snug">
+            Operating mode @Mode · update @(UpdateHz) Hz · frames received @(Frames).
+        </p>
+    }
+</Panel>
+
+@code {
+    private FeedDiagnosticsDto? _diag;
+    private DateTimeOffset _last = DateTimeOffset.MinValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ticker.Tick += OnTick;
+        await Refresh();
+    }
+
+    private void OnTick() => InvokeAsync(async () =>
+    {
+        if (DateTimeOffset.UtcNow - _last < TimeSpan.FromSeconds(2)) return;
+        await Refresh();
+        StateHasChanged();
+    });
+
+    private async Task Refresh()
+    {
+        _last = DateTimeOffset.UtcNow;
+        _diag = await Api.GetFeedDiagnosticsAsync();
+    }
+
+    private string Mode => Mill.Summary?.Mode.ToWire() ?? "—";
+    private string UpdateHz => JsNumber.ToFixed(Mill.Summary?.Communication.UpdateRateHz ?? 0, 1);
+    private string Frames => (Mill.Summary?.Communication.FramesReceived ?? 0).ToString();
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

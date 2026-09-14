@@ -1,0 +1,147 @@
+@*
+    SYSTEM STATUS - one box, every subsystem, with an overall verdict.
+
+    An operator asking "is anything wrong?" should find the answer in one place, and an abnormal
+    system should be identifiable without reading every row.
+
+    HONESTY NOTE. On the CRM04 46-tag extract almost every row here is NO TAG: the plant does not
+    publish control-mode words, interlock states or auxiliary health. That is the truthful picture
+    and exactly what §7.4 demands we show. A green tick on a row we cannot actually see would be a
+    lie, and the OVERALL verdict below deliberately REFUSES TO CLAIM HEALTH IT CANNOT VERIFY -
+    "NO FAULTS · n NOT INSTRUMENTED" is the strongest honest statement when most rows are blind.
+
+    Port of src/components/panels/SystemStatusBoard.tsx.
+*@
+@using Crm04.Contracts
+@using Crm04.Domain.Types
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="System status" BodyClass="p-0">
+    <Right>
+        <span class="text-micro inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-bold tracking-wider @(Faults > 0 ? "border-alarm/50 bg-alarm/10 text-alarm" : "border-healthy/40 bg-healthy/10 text-healthy")">
+            <span aria-hidden="true" class="dot-glow h-1.5 w-1.5 rounded-full @(Faults > 0 ? "bg-alarm alarm-pulse" : "bg-healthy")"></span>
+            @(Faults > 0 ? $"{Faults} ABNORMAL" : "MONITORED")
+        </span>
+    </Right>
+    <ChildContent>
+        <ul class="divide-line divide-y">
+            @foreach (var row in Rows)
+            {
+                <li class="status-row flex items-center justify-between gap-3 px-4 py-[7px] @(row.Verdict == V.Bad ? "bg-alarm/8" : "")" @key="row.Label">
+                    <span class="text-meta truncate @(row.Verdict == V.Bad ? "text-alarm font-semibold" : "text-text-dim")">
+                        @row.Label
+                    </span>
+                    <span class="inline-block border px-1.5 text-micro leading-[15px] tracking-wider @row.PillClass">
+                        @row.PillText
+                    </span>
+                </li>
+            }
+        </ul>
+
+        <div class="border-line flex items-center justify-between gap-3 border-t px-4 py-3 @(Faults > 0 ? "verdict-bad" : "verdict-good")">
+            <span class="label font-semibold">OVERALL</span>
+            <span class="text-meta font-semibold tracking-wide @(Faults > 0 ? "text-alarm" : Unknown > 0 ? "text-text-dim" : "text-healthy")">
+                @Verdict
+            </span>
+        </div>
+    </ChildContent>
+</Panel>
+
+@code {
+    /// <summary>Three states, because "not faulted" and "healthy" are different claims.</summary>
+    private enum V { Good, Bad, Unknown }
+
+    private sealed record StatusRow(string Label, V Verdict, string PillClass, string PillText);
+
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private SystemStatusDto? Sys => Mill.Summary?.Systems;
+
+    private List<StatusRow> Rows
+    {
+        get
+        {
+            var rows = new List<StatusRow>();
+            if (Sys is not { } s) return rows;
+
+            var comm = Mill.Summary!.Communication;
+            var commState = comm.Connected ? (comm.Stale ? CtrlState.Fault : CtrlState.On) : CtrlState.Fault;
+
+            // E-stop is INVERTED: pressed (true) is the abnormal condition, so "safe" is !pressed.
+            bool? safety = s.EmergencyStop is null ? null : !s.EmergencyStop.Value;
+
+            rows.Add(Interlock("MILL", s.MillInterlock));
+            rows.Add(Interlock("DRIVE", s.DriveReady));
+            rows.Add(Interlock("HYDRAULIC", s.HydraulicReady));
+            rows.Add(Interlock("GAUGE", s.GaugeReady));
+            rows.Add(Control("TENSION CONTROL", s.TensionRegulation));
+            rows.Add(HealthRow("COOLING", s.Coolant));
+            rows.Add(HealthRow("LUBRICATION", s.Lubrication));
+            rows.Add(HealthRow("EXHAUST", s.Exhaust));
+            rows.Add(Control("AGC", s.Agc));
+            rows.Add(Control("WR BENDING", s.Bending));
+            rows.Add(Control("MASS FLOW CONTROL", s.MassFlowControl));
+            rows.Add(Control("POSITION MODE", s.PositionMode));
+            rows.Add(Control("PLC / DATA", commState));
+            rows.Add(Interlock("SAFETY INTERLOCK", safety));
+
+            return rows;
+        }
+    }
+
+    /// <summary>Interlock booleans are three-state: ready, not ready, or no tag at all.</summary>
+    private static StatusRow Interlock(string label, bool? value)
+    {
+        var health = value is null ? Health.NoTag : value.Value ? Health.Healthy : Health.Fault;
+        var verdict = value is null ? V.Unknown : value.Value ? V.Good : V.Bad;
+        return new StatusRow(label, verdict, Pills.HealthClass(health), Pills.HealthText(health));
+    }
+
+    private static StatusRow Control(string label, CtrlState state)
+    {
+        var verdict = state switch
+        {
+            CtrlState.NoTag or CtrlState.Unknown => V.Unknown,
+            CtrlState.Fault => V.Bad,
+            _ => V.Good,
+        };
+        return new StatusRow(label, verdict, Pills.CtrlClass(state), Pills.CtrlText(state));
+    }
+
+    private static StatusRow HealthRow(string label, Health health)
+    {
+        var verdict = health switch
+        {
+            Health.NoTag or Health.Unknown => V.Unknown,
+            Health.Fault or Health.Warning => V.Bad,
+            _ => V.Good,
+        };
+        return new StatusRow(label, verdict, Pills.HealthClass(health), Pills.HealthText(health));
+    }
+
+    private int Faults => Rows.Count(r => r.Verdict == V.Bad);
+    private int Unknown => Rows.Count(r => r.Verdict == V.Unknown);
+
+    private string Verdict => Faults > 0
+        ? $"{Faults} SYSTEM{(Faults == 1 ? "" : "S")} ABNORMAL"
+        : Unknown > 0
+            ? $"NO FAULTS · {Unknown} NOT INSTRUMENTED"
+            : "SYSTEM HEALTHY";
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

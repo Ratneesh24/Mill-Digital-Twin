@@ -33,10 +33,10 @@ export function EventTimeline() {
         <ul className="divide-line divide-y">
           {events.map((event) => (
             <li key={event.id} className="flex items-baseline gap-2 px-2.5 py-[3px]">
-              <span className="num text-text-faint shrink-0 text-[10px]">
+              <span className="num text-text-faint shrink-0 text-micro">
                 {new Date(event.timestamp).toLocaleTimeString()}
               </span>
-              <span className={`truncate text-[10px] tracking-wide ${CATEGORY_STYLE[event.category]}`}>
+              <span className={`truncate text-micro tracking-wide ${CATEGORY_STYLE[event.category]}`}>
                 {event.message}
               </span>
             </li>

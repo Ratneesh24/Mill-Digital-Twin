@@ -39,7 +39,7 @@ export function InterlockStatus() {
         }`}
       >
         <div
-          className={`text-[14px] font-semibold tracking-[0.12em] ${
+          className={`text-body font-semibold tracking-[0.12em] ${
             chain.millReady
               ? 'text-healthy'
               : readout.unverified
@@ -51,7 +51,7 @@ export function InterlockStatus() {
         </div>
         {readout.reason && (
           <div
-            className={`mt-0.5 text-[11px] tracking-wide ${
+            className={`mt-0.5 text-meta tracking-wide ${
               readout.unverified ? 'text-warning' : 'text-alarm'
             }`}
           >
@@ -85,7 +85,7 @@ export function InterlockStatus() {
                 {node.label}
               </span>
               <span
-                className={`text-[10px] tracking-wider ${
+                className={`text-micro tracking-wider ${
                   node.ok
                     ? 'text-healthy'
                     : noTag

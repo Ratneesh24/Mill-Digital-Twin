@@ -40,8 +40,8 @@ function ReelBlock({ reel }: { reel: 'DTR' | 'ETR' | 'POR' }) {
   return (
     <div className="border-line not-last:mb-2 not-last:border-b not-last:pb-2">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="num text-text text-[12px] font-semibold tracking-[0.1em]">{reel}</span>
-        <span className={`border px-1.5 text-[9px] leading-[15px] tracking-wider ${ROLE_STYLE[state.role]}`}>
+        <span className="num text-text text-meta font-semibold tracking-[0.1em]">{reel}</span>
+        <span className={`border px-1.5 text-micro leading-[15px] tracking-wider ${ROLE_STYLE[state.role]}`}>
           {isPor ? 'PARKED' : ROLE_LABEL[state.role]}
         </span>
       </div>
@@ -61,12 +61,12 @@ function ReelBlock({ reel }: { reel: 'DTR' | 'ETR' | 'POR' }) {
       <div className="mt-1 flex items-center gap-2">
         <span className="label">BRAKE</span>
         {state.brake === null ? (
-          <span className="text-prov-notag border-prov-notag/60 border border-dashed px-1 text-[9px] leading-[14px]">
+          <span className="text-prov-notag border-prov-notag/60 border border-dashed px-1 text-micro leading-[14px]">
             NO TAG
           </span>
         ) : (
           <span
-            className={`border px-1 text-[9px] leading-[14px] tracking-wider ${
+            className={`border px-1 text-micro leading-[14px] tracking-wider ${
               state.brake === 'APPLIED'
                 ? 'border-warning/50 text-warning bg-warning/10'
                 : 'border-healthy/40 text-healthy bg-healthy/10'
@@ -80,12 +80,12 @@ function ReelBlock({ reel }: { reel: 'DTR' | 'ETR' | 'POR' }) {
           <>
             <span className="label ml-2">GAUGE</span>
             {gaugeReady === null ? (
-              <span className="text-prov-notag border-prov-notag/60 border border-dashed px-1 text-[9px] leading-[14px]">
+              <span className="text-prov-notag border-prov-notag/60 border border-dashed px-1 text-micro leading-[14px]">
                 NO TAG
               </span>
             ) : (
               <span
-                className={`border px-1 text-[9px] leading-[14px] tracking-wider ${
+                className={`border px-1 text-micro leading-[14px] tracking-wider ${
                   gaugeReady
                     ? 'border-healthy/40 text-healthy bg-healthy/10'
                     : 'border-alarm/50 text-alarm bg-alarm/10'

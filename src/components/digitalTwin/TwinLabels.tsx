@@ -24,7 +24,7 @@ import { useUiStore } from '../../store/uiStore'
 import { ValueReadout } from '../common/ValueReadout'
 import { useTwinFrame } from './TwinContext'
 import { rollGapToScene } from '../../config/unitConversion'
-import { backupRollCentreY, SCENE, workRollCentreY } from './twinMaterials'
+import { backupRollCentreY, LINE, SCENE, workRollCentreY } from './twinMaterials'
 
 /** Shared chrome for every scene label. */
 function LabelChip({
@@ -42,7 +42,7 @@ function LabelChip({
         : 'border-line-bright text-text-dim'
   return (
     <div
-      className={`pointer-events-none rounded border bg-base-900/95 px-2 py-1 text-[10px] leading-[13px] font-medium tracking-wide whitespace-nowrap shadow-sm ${toneClass}`}
+      className={`pointer-events-none rounded border bg-base-900/95 px-2 py-1 text-micro leading-[13px] font-medium tracking-wide whitespace-nowrap shadow-sm ${toneClass}`}
     >
       {children}
     </div>
@@ -80,12 +80,22 @@ function ValueLabel({
   return (
     <Html position={position} center zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
       <div className="border-line-bright bg-base-900/95 pointer-events-none rounded-md border px-2 py-1 shadow-sm">
-        <div className="text-text-dim text-[9px] leading-[12px] tracking-wide">{title}</div>
+        <div className="text-text-dim text-micro leading-[12px] tracking-wide">{title}</div>
         <ValueReadout tagName={tagName} size="sm" decimals={decimals} />
       </div>
     </Html>
   )
 }
+
+/**
+ * Label rows along the line, kept below the pass line and on the camera's side of
+ * the barrel so they read in front of the equipment rather than through it.
+ */
+const STATION_LABEL_Y = SCENE.floorY + 0.34
+const AUX_LABEL_Y = SCENE.floorY + 0.06
+const STATION_LABEL_Z = (SCENE.housingZ + 0.5) * SCENE.cameraSideZ
+/** Nearer offset for chips that sit on the pass line rather than on the floor. */
+const PASS_LINE_LABEL_Z = 0.7 * SCENE.cameraSideZ
 
 export function TwinLabels() {
   const show = useUiStore((s) => s.showSceneLabels)
@@ -99,23 +109,45 @@ export function TwinLabels() {
       <EntryExitLabels />
 
       {/*
-        Reel identities are physical and do not move with direction. POR sits
-        behind DTR, so its label is dropped lower to keep the two apart in
-        projection.
+        Station identities are physical and do not move with direction. They are
+        laid out along the pass line in the §3 centre-line order, which with the
+        default camera reads POR on the right through to DTR on the left — the
+        mill's own right-to-left hand.
       */}
-      <StaticLabel position={[-SCENE.reelX, -1.22, 0.9]} text="DTR" />
-      <StaticLabel position={[SCENE.reelX, -1.22, 0.9]} text="ETR" />
-      <StaticLabel position={[-SCENE.reelX, -1.78, SCENE.porZ]} text="POR" />
+      <StaticLabel position={[LINE.porX, STATION_LABEL_Y, STATION_LABEL_Z]} text="POR" />
+      <StaticLabel position={[LINE.etrX, STATION_LABEL_Y, STATION_LABEL_Z]} text="ETR" />
+      <StaticLabel position={[LINE.dtrX, STATION_LABEL_Y, STATION_LABEL_Z]} text="DTR" />
 
-      {/* The values §10.6 allows into the scene, and no others. */}
+      {/*
+        Auxiliary line equipment. Dropped a row lower than the reels so a
+        crowded entry end still reads, and suppressed on a small viewport where
+        they would overlap into noise.
+      */}
+      {!compact && (
+        <>
+          <StaticLabel position={[LINE.flattenerX, AUX_LABEL_Y, STATION_LABEL_Z]} text="PINCH ROLL / FLATTENER" />
+          <StaticLabel position={[LINE.entryDeflectorX, AUX_LABEL_Y, STATION_LABEL_Z]} text="ENTRY DEFLECTOR" />
+          <StaticLabel position={[LINE.deliveryDeflectorX, AUX_LABEL_Y, STATION_LABEL_Z]} text="DELIVERY DEFLECTOR" />
+          <StaticLabel position={[LINE.cropShearX, AUX_LABEL_Y, STATION_LABEL_Z]} text="CROP SHEAR" />
+        </>
+      )}
+
+      {/*
+        The values §10.6 allows into the scene, and no others.
+
+        ROLL GAP is pulled well forward of the label rows in Z so it separates
+        from the deflector and shear chips by parallax rather than landing on top
+        of them: they share the middle of the line, and at line zoom a few metres
+        of X is not much screen distance.
+      */}
       {!compact && <ValueLabel
-        position={[0, SCENE.floorY + 0.35, SCENE.housingZ + 1.15]}
+        position={[0, SCENE.floorY + 0.42, (SCENE.housingZ + 1.9) * SCENE.cameraSideZ]}
         title={`ROLL GAP · GEOMETRY ×${millConfig.visual.rollGapExaggeration} FOR LEGIBILITY`}
         tagName="ROLL.GAP.ACTUAL"
         decimals={3}
       />}
       {!compact && <ValueLabel
-        position={[0, SCENE.housingTop + 0.5, 0]}
+        position={[0, SCENE.housingTop + 0.42, 0]}
         title="ROLL FORCE"
         tagName="ROLL.FORCE.ACTUAL"
         decimals={0}
@@ -140,11 +172,12 @@ function RollStackLabels() {
     if (lowerBur.current) lowerBur.current.position.y = backupRollCentreY(gap, 'LOWER')
   })
 
-  // Stacked to the near-left of the housing, clear of both reels (which start
-  // at x ≈ ±2.6) and pulled towards the camera in Z so they read in front of
-  // the stand rather than through it.
-  const x = -SCENE.housingPostX - 1.4
-  const z = SCENE.housingZ + 1.0
+  // Stacked out past the housing on the delivery side, clear of the gauge and
+  // the deflector roll, and pulled towards the camera in Z so they read in front
+  // of the stand rather than through it. Only shown in the STAND view, where the
+  // camera is close enough for four stacked chips to separate.
+  const x = SCENE.housingPostX + SCENE.burRadius * 2.4
+  const z = (SCENE.housingZ + 0.8) * SCENE.cameraSideZ
 
   return (
     <group>
@@ -174,18 +207,20 @@ function EntryExitLabels() {
 
   useTwinFrame((v) => {
     // directionSign is damped, so the labels slide across rather than teleport.
-    const x = SCENE.reelX * 0.55
+    const x = Math.abs(LINE.deliveryDeflectorX) * 1.4
     if (entryRef.current) entryRef.current.position.x = -x * v.directionSign
     if (exitRef.current) exitRef.current.position.x = x * v.directionSign
   })
 
+  const y = SCENE.housingTop * 0.42
+
   return (
     <group>
       <group ref={entryRef}>
-        <StaticLabel position={[0, 1.05, 0.9]} text="ENTRY" tone="entry" />
+        <StaticLabel position={[0, y, PASS_LINE_LABEL_Z]} text="ENTRY" tone="entry" />
       </group>
       <group ref={exitRef}>
-        <StaticLabel position={[0, 1.05, 0.9]} text="EXIT" tone="exit" />
+        <StaticLabel position={[0, y, PASS_LINE_LABEL_Z]} text="EXIT" tone="exit" />
       </group>
     </group>
   )
@@ -196,18 +231,22 @@ function TensionLabels() {
   const exitRef = useRef<Group>(null)
 
   useTwinFrame((v) => {
-    const x = SCENE.reelX * 0.78
+    // Out along the span, between the deflector roll and the reel, so the value
+    // sits over the stretch of strip it actually describes.
+    const x = Math.abs(LINE.dtrX) * 0.62
     if (entryRef.current) entryRef.current.position.x = -x * v.directionSign
     if (exitRef.current) exitRef.current.position.x = x * v.directionSign
   })
 
+  const y = SCENE.housingTop * 0.55
+
   return (
     <group>
       <group ref={entryRef}>
-        <ValueLabel position={[0, -1.12, 0.9]} title="ENTRY TENSION" tagName="TENSION.ENTRY" />
+        <ValueLabel position={[0, y, PASS_LINE_LABEL_Z]} title="ENTRY TENSION" tagName="TENSION.ENTRY" />
       </group>
       <group ref={exitRef}>
-        <ValueLabel position={[0, -1.12, 0.9]} title="EXIT TENSION" tagName="TENSION.EXIT" />
+        <ValueLabel position={[0, y, PASS_LINE_LABEL_Z]} title="EXIT TENSION" tagName="TENSION.EXIT" />
       </group>
     </group>
   )

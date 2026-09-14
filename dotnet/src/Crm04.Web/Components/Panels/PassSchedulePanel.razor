@@ -1,0 +1,108 @@
+@*
+    PASS SCHEDULE - the plan the mill is working to.
+
+    A table, not cards: an operator comparing pass 3's target against pass 2's outcome wants the
+    thicknesses in a column. The current pass is highlighted and carries a progress bar, so "where
+    are we" is answerable without reading the row numbers.
+
+    THE HEADER STATES THE SOURCE, and says plainly when it is the demo schedule. A representative
+    schedule shown without that caveat would be indistinguishable from the real plan for the coil
+    on the line, which is exactly the kind of plausible-looking falsehood §7.4 exists to prevent.
+
+    Port of src/components/panels/PassSchedulePanel.tsx.
+*@
+@using Crm04.Domain.Coils
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject ApiClient Api
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="Pass schedule" BodyClass="p-0">
+    <Right>
+        <span class="text-text-faint text-micro truncate">
+            @(_schedule?.Source ?? "—") (DEMO &mdash; representative schedule, not a production coil)
+        </span>
+    </Right>
+    <ChildContent>
+        @if (_schedule is null)
+        {
+            <p class="text-text-faint py-3 text-center text-meta">Loading schedule…</p>
+        }
+        else
+        {
+            <table class="w-full text-meta">
+                <thead>
+                    <tr class="text-text-faint border-line border-b text-left">
+                        <th class="px-4 font-medium">PASS</th>
+                        <th class="px-2 font-medium">DIR</th>
+                        <th class="px-2 text-right font-medium">IN &rarr; OUT (mm)</th>
+                        <th class="px-2 text-right font-medium">RED %</th>
+                        <th class="px-2 text-right font-medium">SPEED</th>
+                        <th class="px-2 text-right font-medium">&sigma; ENTRY</th>
+                        <th class="px-2 text-right font-medium">&sigma; EXIT</th>
+                        <th class="px-4 text-right font-medium">FORCE REF</th>
+                    </tr>
+                </thead>
+                <tbody class="num">
+                    @foreach (var p in _schedule.Passes)
+                    {
+                        <tr class="@(p.Pass == CurrentPass ? "pass-current" : "")" @key="p.Pass">
+                            <td class="text-text px-4">@p.Pass</td>
+                            <td class="text-text-dim px-2">
+                                @(p.Direction == RollingDirection.Forward ? "FWD →" : "← REV")
+                            </td>
+                            <td class="text-text px-2 text-right">
+                                @JsNumber.ToFixed(p.InputThickness, 3) &rarr; @JsNumber.ToFixed(p.OutputThickness, 3)
+                            </td>
+                            <td class="text-text-dim px-2 text-right">@JsNumber.ToFixed(p.Reduction, 1)</td>
+                            <td class="text-text-dim px-2 text-right">@JsNumber.ToFixed(p.SpeedReference, 0)</td>
+                            <td class="text-text-dim px-2 text-right">@JsNumber.ToFixed(p.EntrySpecificTension, 0)</td>
+                            <td class="text-text-dim px-2 text-right">@JsNumber.ToFixed(p.ExitSpecificTension, 0)</td>
+                            <td class="text-text-dim px-4 text-right">@JsNumber.ToFixed(p.PredictedForce, 0) t</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div class="border-line border-t px-4 py-2.5">
+                <div class="mb-1.5 flex items-center justify-between">
+                    <span class="label">
+                        Pass @CurrentPass &middot; @(Mill.Summary?.Direction == RollingDirection.Reverse ? "REVERSE" : "FORWARD")
+                    </span>
+                    <span class="num text-text-dim text-micro">@JsNumber.ToFixed(Progress, 0)%</span>
+                </div>
+                <Progress Value="Progress" AriaLabel="@($"Pass {CurrentPass} progress")" />
+            </div>
+        }
+    </ChildContent>
+</Panel>
+
+@code {
+    private PassSchedule? _schedule;
+    private int _seen = -1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ticker.Tick += OnTick;
+        _schedule = await Api.GetPassScheduleAsync();
+    }
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen && _schedule is not null) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private int CurrentPass => Mill.Summary?.PassCurrent ?? 1;
+
+    private double Progress => (Mill.Summary?.PassProgress ?? 0d) * 100d;
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

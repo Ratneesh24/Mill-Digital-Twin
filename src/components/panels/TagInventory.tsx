@@ -75,10 +75,10 @@ export function TagInventory() {
   }
 
   return (
-    <div className="grid min-h-0 gap-3.5 lg:grid-cols-[340px_minmax(0,1fr)]">
+    <div className="dashboard-page-grid grid min-h-0 gap-3.5 lg:grid-cols-[340px_minmax(0,1fr)]">
       <div className="flex min-h-0 flex-col gap-3.5">
         <Panel title="CRM04 feed reality — §7.4">
-          <p className="text-text-dim mb-3 text-[12px] leading-relaxed">
+          <p className="text-text-dim mb-3 text-meta leading-relaxed">
             The available 6-month CRM04 extract is 5 s sampled, coil-linked, and carries about 46 of
             the 74 tags this twin models. Everything below is what that means for the picture on the
             other screen.
@@ -110,7 +110,7 @@ export function TagInventory() {
             tone="text-prov-notag"
           />
 
-          <p className="text-text-faint mt-3 text-[11px] leading-relaxed">
+          <p className="text-text-faint mt-3 text-meta leading-relaxed">
             Promotion path: when OEM raises PLC sampling on a tag, change its{' '}
             <span className="num">liveAvailability</span> to <span className="num">MEASURED</span> in{' '}
             <span className="num">data/tagDefinitions.ts</span>. Nothing else changes — no component
@@ -119,13 +119,13 @@ export function TagInventory() {
         </Panel>
 
         <Panel title="Raise with OEM first — §22 item 3">
-          <p className="text-text-dim mb-2 text-[11px] leading-relaxed">
+          <p className="text-text-dim mb-2 text-meta leading-relaxed">
             Without these, roll force, capsule position and roll speed are all model output rather
             than measurement.
           </p>
           <ul className="space-y-1.5">
             {OEM_PRIORITY_TAGS.map((tagName) => (
-              <li key={tagName} className="num text-warning bg-warning/10 rounded-md px-2 py-1 text-[11px]">
+              <li key={tagName} className="num text-warning bg-warning/10 rounded-md px-2 py-1 text-meta">
                 {tagName}
               </li>
             ))}
@@ -135,7 +135,7 @@ export function TagInventory() {
 
       <Panel
         title={`Tag map · ${filtered.length} of ${tagDefinitions.length} tags`}
-        right={<span className="text-text-faint text-[10px] font-medium normal-case">ACTIVE MODE: {mode}</span>}
+        right={<span className="text-text-faint text-micro font-medium normal-case">ACTIVE MODE: {mode}</span>}
         bodyClassName="p-0 flex flex-col min-h-0"
       >
         <div className="border-line bg-base-850 flex flex-wrap items-end gap-2.5 border-b px-3.5 py-3">
@@ -149,7 +149,7 @@ export function TagInventory() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Tag, description or unit…"
-              className="border-line bg-base-900 text-text placeholder:text-text-faint focus:border-normal min-h-10 w-full rounded-md border px-3 text-[12px]"
+              className="border-line bg-base-900 text-text placeholder:text-text-faint focus:border-normal min-h-10 w-full rounded-md border px-3 text-meta"
             />
           </div>
           <div>
@@ -160,7 +160,7 @@ export function TagInventory() {
               id={filterId}
               value={availability}
               onChange={(e) => setAvailability(e.target.value as LiveAvailability | 'ALL')}
-              className="border-line bg-base-900 text-text focus:border-normal min-h-10 rounded-md border px-2.5 text-[12px]"
+              className="border-line bg-base-900 text-text focus:border-normal min-h-10 rounded-md border px-2.5 text-meta"
             >
               {AVAILABILITY_OPTIONS.map((option) => (
                 <option key={option} value={option}>
@@ -169,7 +169,7 @@ export function TagInventory() {
               ))}
             </select>
           </div>
-          <label className="border-line bg-base-900 text-text-dim flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-[12px] font-medium has-checked:text-text">
+          <label className="border-line bg-base-900 text-text-dim flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-meta font-medium has-checked:text-text">
             <input
               type="checkbox"
               checked={priorityOnly}
@@ -182,7 +182,7 @@ export function TagInventory() {
             <button
               type="button"
               onClick={resetFilters}
-              className="border-line text-text-dim hover:text-text hover:bg-base-800 min-h-10 rounded-md border px-3 text-[12px] font-medium"
+              className="border-line text-text-dim hover:text-text hover:bg-base-800 min-h-10 rounded-md border px-3 text-meta font-medium"
             >
               Reset
             </button>
@@ -200,7 +200,7 @@ export function TagInventory() {
               <button
                 type="button"
                 onClick={resetFilters}
-                className="bg-brand min-h-10 rounded-md px-4 text-[12px] font-semibold text-white"
+                className="bg-brand min-h-10 rounded-md px-4 text-meta font-semibold text-white"
               >
                 Clear search and filters
               </button>
@@ -210,7 +210,7 @@ export function TagInventory() {
           <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full border-collapse">
               <thead className="bg-base-850 sticky top-0 z-10">
-                <tr className="text-text-faint border-line border-b text-[10px] tracking-wider">
+                <tr className="text-text-faint border-line border-b text-micro tracking-wider">
                   <th className="px-2.5 py-2 text-left font-semibold">TAG</th>
                   <th className="px-2.5 py-2 text-left font-semibold">DESCRIPTION</th>
                   <th className="px-2.5 py-2 text-left font-semibold">UNIT</th>
@@ -225,7 +225,7 @@ export function TagInventory() {
                   return (
                     <tr
                       key={def.tagName}
-                      className={`border-line border-b text-[11px] ${
+                      className={`border-line border-b text-meta ${
                         priority.has(def.tagName) ? 'bg-warning/10' : ''
                       }`}
                       title={def.liveNote}
@@ -268,7 +268,7 @@ function Count({ label, value, tone }: { label: string; value: number; tone: str
   return (
     <div className="border-line flex items-baseline justify-between border-b py-1.5 last:border-b-0">
       <span className="label">{label}</span>
-      <span className={`num text-[17px] font-semibold ${tone}`}>{value}</span>
+      <span className={`num text-value font-semibold ${tone}`}>{value}</span>
     </div>
   )
 }

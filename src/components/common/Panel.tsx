@@ -48,7 +48,7 @@ const HEALTH_TEXT: Record<Health, string> = {
 export function HealthPill({ health }: { health: Health }) {
   return (
     <span
-      className={`inline-block border px-1.5 text-[9px] leading-[15px] tracking-wider ${HEALTH_STYLE[health]}`}
+      className={`inline-block border px-1.5 text-micro leading-[15px] tracking-wider ${HEALTH_STYLE[health]}`}
     >
       {HEALTH_TEXT[health]}
     </span>
@@ -74,7 +74,7 @@ const CTRL_TEXT: Record<CtrlState, string> = {
 export function ControlPill({ state }: { state: CtrlState }) {
   return (
     <span
-      className={`inline-block border px-1.5 text-[9px] leading-[15px] tracking-wider ${CTRL_STYLE[state]}`}
+      className={`inline-block border px-1.5 text-micro leading-[15px] tracking-wider ${CTRL_STYLE[state]}`}
     >
       {CTRL_TEXT[state]}
     </span>
@@ -110,7 +110,7 @@ export function UtilisationBar({
       {label && (
         <div className="flex justify-between">
           <span className="label">{label}</span>
-          <span className="num text-text-dim text-[10px]">{pct.toFixed(0)}%</span>
+          <span className="num text-text-dim text-micro">{pct.toFixed(0)}%</span>
         </div>
       )}
       <div className="bg-base-800 border-line relative mt-1 h-[6px] w-full border">
@@ -133,5 +133,5 @@ export function UtilisationBar({
 }
 
 export function EmptyNote({ children }: { children: ReactNode }) {
-  return <p className="text-text-faint py-3 text-center text-[11px]">{children}</p>
+  return <p className="text-text-faint py-3 text-center text-meta">{children}</p>
 }

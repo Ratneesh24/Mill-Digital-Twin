@@ -28,10 +28,10 @@ const STATUS_TEXT: Record<TagStatus, string> = {
 export type ReadoutSize = 'sm' | 'md' | 'lg' | 'xl'
 
 const SIZE_CLASS: Record<ReadoutSize, string> = {
-  sm: 'text-[13px]',
-  md: 'text-[17px]',
-  lg: 'text-[24px]',
-  xl: 'text-[34px]',
+  sm: 'text-body',
+  md: 'text-value',
+  lg: 'text-value-lg',
+  xl: 'text-hero',
 }
 
 interface Props {
@@ -107,7 +107,7 @@ export function ValueReadout({
         {text}
       </span>
       {!hideUnit && unit && (
-        <span className="text-text-faint text-[10px] leading-none">{unit}</span>
+        <span className="text-text-faint text-micro leading-none">{unit}</span>
       )}
       {!hideBadge && (
         <ProvenanceBadge
@@ -188,8 +188,8 @@ export function DerivedRow({
     <div className="flex items-baseline justify-between gap-3 py-[3px]" title={title}>
       <span className="label truncate">{label}</span>
       <span className="inline-flex items-baseline gap-1.5">
-        <span className={`num text-[13px] ${toneClass}`}>{value}</span>
-        {unit && <span className="text-text-faint text-[10px]">{unit}</span>}
+        <span className={`num text-body ${toneClass}`}>{value}</span>
+        {unit && <span className="text-text-faint text-micro">{unit}</span>}
       </span>
     </div>
   )

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Crm04.Domain - the port of the React app's React-free core.
+
+    DELIBERATELY HAS NO PACKAGE REFERENCES AT ALL, and references no other project.
+    It holds the types, the mill/engineering configuration, the tag catalogue, the
+    MachineState projector, and the pure alarm/interlock engines. If a dependency ever
+    needs to be added here, that is a signal something belongs in Persistence or Api
+    instead.
+
+    Mirrors the layer contract in README.md lines 100-105 of the TypeScript app.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Crm04.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

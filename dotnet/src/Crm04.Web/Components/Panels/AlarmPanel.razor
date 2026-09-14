@@ -1,0 +1,120 @@
+@*
+    ACTIVE ALARMS.
+
+    Ordered by severity then by the order the engine raised them, which is evaluation order:
+    force, then process, then plant, then comms. Each row states its severity as a WORD as well as
+    a colour, and carries the value that tripped it against the limit it tripped - "251 t of 288 t"
+    tells an operator how far past the line they are, which a bare "HIGH FORCE" does not.
+
+    Port of src/components/panels/AlarmPanel.tsx.
+*@
+@using Crm04.Contracts
+@using Crm04.Domain.Types
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="Alarms" BodyClass="p-0">
+    <Right>
+        <span class="text-micro inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-bold tracking-wider @HeaderPill">
+            <span aria-hidden="true" class="dot-glow h-1.5 w-1.5 rounded-full @HeaderDot"></span>
+            @(Alarms.Count == 0 ? "ALL CLEAR" : $"{Alarms.Count} ACTIVE")
+        </span>
+    </Right>
+    <ChildContent>
+        @if (Alarms.Count == 0)
+        {
+            <div class="flex items-center gap-3 px-4 py-5">
+                <span aria-hidden="true" class="bg-healthy/12 text-healthy grid h-9 w-9 place-items-center rounded-xl">
+                    <Icon Name="ShieldCheck" Size="18" />
+                </span>
+                <div class="min-w-0">
+                    <p class="text-text text-body font-semibold">All clear</p>
+                    <p class="text-text-faint text-meta">No active alarms</p>
+                </div>
+            </div>
+        }
+        else
+        {
+            <ul class="divide-line divide-y">
+                @foreach (var a in Ordered)
+                {
+                    <li class="flex items-start gap-3 px-4 py-2.5 @RowTint(a.Severity)" @key="a.Id">
+                        <span aria-hidden="true" class="mt-0.5 shrink-0 @IconTone(a.Severity)">
+                            <Icon Name="AlertTriangle" Size="15" />
+                        </span>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                <span class="text-micro font-bold tracking-wider @IconTone(a.Severity)">@a.Severity.ToWire()</span>
+                                <span class="text-text text-meta font-semibold">@a.Parameter</span>
+                            </div>
+                            <p class="text-text-dim text-meta mt-0.5 leading-snug">@a.Message</p>
+                            <p class="text-text-faint num text-micro mt-1">
+                                @JsNumber.ToFixed(a.ActualValue, 1)@(string.IsNullOrEmpty(a.Unit) ? "" : " " + a.Unit)
+                                &middot; limit @JsNumber.ToFixed(a.Limit, 1)@(string.IsNullOrEmpty(a.Unit) ? "" : " " + a.Unit)
+                                &middot; @a.TagName
+                            </p>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+    </ChildContent>
+</Panel>
+
+@code {
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private IReadOnlyList<AlarmDto> Alarms => Mill.Alarms;
+
+    /// <summary>
+    /// Most severe first. OrderByDescending on the enum works because AlarmSeverity is declared
+    /// Info, Warning, Alarm, Trip - increasing severity - and the sort is stable, so within a
+    /// severity the engine's evaluation order survives.
+    /// </summary>
+    private IEnumerable<AlarmDto> Ordered => Alarms.OrderByDescending(a => a.Severity);
+
+    private AlarmSeverity Worst => Alarms.Count == 0 ? AlarmSeverity.Info : Alarms.Max(a => a.Severity);
+
+    private string HeaderPill => Alarms.Count == 0
+        ? "border-healthy/40 bg-healthy/10 text-healthy"
+        : Worst == AlarmSeverity.Warning
+            ? "border-warning/50 bg-warning/10 text-warning"
+            : "border-alarm/50 bg-alarm/10 text-alarm";
+
+    private string HeaderDot => Alarms.Count == 0
+        ? "bg-healthy"
+        : Worst == AlarmSeverity.Warning ? "bg-warning" : "bg-alarm alarm-pulse";
+
+    private static string IconTone(AlarmSeverity s) => s switch
+    {
+        AlarmSeverity.Trip => "text-trip",
+        AlarmSeverity.Alarm => "text-alarm",
+        AlarmSeverity.Warning => "text-warning",
+        _ => "text-normal",
+    };
+
+    private static string RowTint(AlarmSeverity s) => s switch
+    {
+        AlarmSeverity.Trip => "bg-trip/8 sev-glow-trip",
+        AlarmSeverity.Alarm => "bg-alarm/8 sev-glow-alarm",
+        AlarmSeverity.Warning => "bg-warning/8 sev-glow-warning",
+        _ => "sev-glow-info",
+    };
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

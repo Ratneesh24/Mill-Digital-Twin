@@ -14,13 +14,24 @@ import { useRef } from 'react'
 import type { Mesh, MeshStandardMaterial } from 'three'
 import { useFrame } from '@react-three/fiber'
 import { useAlarmStore } from '../../store/alarmStore'
-import { MATERIALS, SCENE, SCENE_COLORS } from './twinMaterials'
+import { LINE, MATERIALS, SCENE, SCENE_COLORS } from './twinMaterials'
 
+/**
+ * §6.1: "Operator-side and drive-side housings are made SEPARATELY; each has a
+ * central window for inserting the rolls. Both housings connected by a separator
+ * at the top and back-up roll change rails at the bottom."
+ *
+ * That is the structure this component now draws: two independent frames, joined
+ * only at the top and at floor level, with replaceable liners on the inner faces
+ * of each window.
+ */
 export function MillStand() {
   const postHeight = SCENE.housingTop - SCENE.housingBottom
   const postCentreY = (SCENE.housingTop + SCENE.housingBottom) / 2
-  const postWidth = 0.34
-  const postDepth = 0.4
+  const postWidth = SCENE.burRadius * 0.52
+  const postDepth = SCENE.barrelLength * 0.42
+  const beamHeight = SCENE.burRadius * 0.5
+  const windowSpan = SCENE.housingPostX * 2 + postWidth
 
   return (
     <group>
@@ -39,25 +50,65 @@ export function MillStand() {
         )),
       )}
 
+      {/*
+        Replaceable steel plate liners on the inner faces of each housing window
+        (§6.1 item 3) — the surfaces the roll chocks actually slide on, and the
+        ones the weekly grease schedule (§11.1) exists for.
+
+        Only as tall as the chocks actually travel. Running them the full height
+        of the post makes them read as dark slabs across the window, which hides
+        the roll stack the view exists to show.
+      */}
+      {[-1, 1].map((z) =>
+        [-1, 1].map((x) => (
+          <mesh
+            key={`liner-${z}-${x}`}
+            position={[
+              x * (SCENE.housingPostX - postWidth / 2 - 0.008),
+              0,
+              z * SCENE.housingZ,
+            ]}
+            castShadow
+          >
+            <boxGeometry args={[0.016, SCENE.burRadius * 3.4, postDepth * 0.55]} />
+            <meshStandardMaterial {...MATERIALS.workRollChock} />
+          </mesh>
+        )),
+      )}
+
       {/* Top and bottom cross beams closing each housing window. */}
       {[-1, 1].map((z) =>
         [SCENE.housingTop, SCENE.housingBottom].map((y) => (
           <mesh key={`${z}-${y}`} position={[0, y, z * SCENE.housingZ]} castShadow receiveShadow>
-            <boxGeometry args={[SCENE.housingPostX * 2 + postWidth, 0.36, postDepth]} />
+            <boxGeometry args={[windowSpan, beamHeight, postDepth]} />
             <meshStandardMaterial {...MATERIALS.housingTrim} />
           </mesh>
         )),
       )}
 
-      {/* Tie beams front-to-back across the top of the stand. */}
-      {[-1, 1].map((x) => (
+      {/*
+        Separator at the top (§6.1 item 2) — the single member tying the two
+        otherwise separate housings together, spanning the full barrel.
+      */}
+      <mesh position={[0, SCENE.housingTop + beamHeight * 0.7, 0]} castShadow receiveShadow>
+        <boxGeometry args={[windowSpan * 0.8, beamHeight * 0.7, SCENE.housingZ * 2 + postDepth]} />
+        <meshStandardMaterial {...MATERIALS.housingTrim} />
+      </mesh>
+
+      {/*
+        Back-up roll change rails at the bottom (§6.1 item 2, §6.9). They run out
+        of the housing on the operator side, which is the direction the roll
+        changing car travels.
+      */}
+      {[-1, 1].map((z) => (
         <mesh
-          key={x}
-          position={[x * SCENE.housingPostX, SCENE.housingTop, 0]}
+          key={`rail-${z}`}
+          position={[0, SCENE.housingBottom + beamHeight * 0.62, z * SCENE.housingZ * 0.66]}
           castShadow
+          receiveShadow
         >
-          <boxGeometry args={[postWidth * 0.8, 0.22, SCENE.housingZ * 2]} />
-          <meshStandardMaterial {...MATERIALS.housingTrim} />
+          <boxGeometry args={[windowSpan * 2.6, 0.05, 0.09]} />
+          <meshStandardMaterial {...MATERIALS.workRollChock} />
         </mesh>
       ))}
 
@@ -86,7 +137,7 @@ function StandAlarmGlow() {
   })
 
   return (
-    <mesh ref={ref} position={[0, 0, -SCENE.housingZ - 0.22]} visible={false}>
+    <mesh ref={ref} position={[0, 0, -SCENE.housingZ - 0.18]} visible={false}>
       <planeGeometry args={[SCENE.housingPostX * 2.4, SCENE.housingTop - SCENE.housingBottom]} />
       <meshStandardMaterial
         color={SCENE_COLORS.alarm}
@@ -101,13 +152,24 @@ function StandAlarmGlow() {
 }
 
 /**
- * Light mill floor, sized just past the reels to ground the equipment without
- * hiding the pass-line silhouette. It is not a selectable machine part.
+ * Light mill floor, spanning the whole line from the pay-off reel to the delivery
+ * tension reel with a margin either end. It is not a selectable machine part.
+ *
+ * The floor is at `passLineHeight` below the pass line, so the reels, the coil
+ * cars and the stand all stand on one surface rather than each choosing its own
+ * ground.
  */
 function Floor() {
+  const width = LINE.maxX - LINE.minX + 5
+  const centreX = (LINE.maxX + LINE.minX) / 2
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, SCENE.floorY, 0]} receiveShadow raycast={() => {}}>
-      <planeGeometry args={[SCENE.reelX * 2 + 4, 9]} />
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[centreX, SCENE.floorY, 0]}
+      receiveShadow
+      raycast={() => {}}
+    >
+      <planeGeometry args={[width, 9]} />
       <meshStandardMaterial {...MATERIALS.floor} />
     </mesh>
   )

@@ -1,0 +1,22 @@
+@* Panel shell. Layout only - no process values. Port of src/components/common/Panel.tsx. *@
+
+<section class="panel @Class">
+    <header class="panel-title">
+        <h2 class="min-w-0">@Title</h2>
+        @Right
+    </header>
+    <div class="panel-body @BodyClass">@ChildContent</div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = default!;
+
+    /// <summary>Content pinned to the right of the header - a count, a chip, a control.</summary>
+    [Parameter] public RenderFragment? Right { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public string Class { get; set; } = "";
+
+    [Parameter] public string BodyClass { get; set; } = "";
+}

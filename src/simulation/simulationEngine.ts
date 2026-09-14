@@ -688,9 +688,12 @@ export class SimulationEngine {
       'EMERGENCY.STOP': s.eStop,
       'FAST.STOP': s.fastStopLatched,
 
-      // GAUGES
-      'GAUGE.DTR.THICKNESS': s.direction === 'FORWARD' ? gaugeEntry : gaugeExit,
-      'GAUGE.ETR.THICKNESS': s.direction === 'FORWARD' ? gaugeExit : gaugeEntry,
+      // GAUGES. Each isotope gauge is bolted to one side of the stand and never
+      // moves; what it MEASURES swaps with direction. On FORWARD the ETR side is
+      // upstream of the bite, so the ETR gauge reads incoming and the DTR gauge
+      // reads delivered.
+      'GAUGE.ETR.THICKNESS': payoff === 'ETR' ? gaugeEntry : gaugeExit,
+      'GAUGE.DTR.THICKNESS': payoff === 'DTR' ? gaugeEntry : gaugeExit,
       'GAUGE.DTR.READY': mods.gaugeReady,
       'GAUGE.ETR.READY': mods.gaugeReady,
     }

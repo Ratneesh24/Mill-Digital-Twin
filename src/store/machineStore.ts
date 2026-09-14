@@ -345,17 +345,60 @@ function applyFrame(
   set({ state: next, tags, interlockChain })
 
   // ---- Telemetry (throttled inside the store, §12) ----------------------
-  if (!next.communication.stale) telemetryStore.record(next.communication.lastFrameTimestamp || Date.now(), {
-    speed: next.speed.actual,
-    thickness: next.thickness.actual,
-    thicknessDeviation: next.thickness.deviation,
-    rollingForce: next.rollingForce.actual,
-    rollGap: next.rollGap.actual,
-    entryTension: next.tension.entry,
-    exitTension: next.tension.exit,
-    torque: next.drive.torque,
-    current: next.drive.current,
-  })
+  // Null fields are skipped by `record`, so a parameter with no tag on this
+  // feed simply never starts a series rather than recording a fake zero.
+  if (!next.communication.stale) {
+    telemetryStore.record(next.communication.lastFrameTimestamp || Date.now(), {
+      // THICKNESS
+      thickness: next.thickness.actual,
+      thicknessEntry: next.thickness.entry,
+      thicknessTarget: next.thickness.reference,
+      thicknessDeviation: next.thickness.deviation,
+      reduction: next.thickness.reduction,
+      gaugeDtr: next.gauges.dtr.thickness,
+      gaugeEtr: next.gauges.etr.thickness,
+      // ROLLING
+      speed: next.speed.actual,
+      speedRef: next.speed.reference,
+      rollingForce: next.rollingForce.actual,
+      rollingForceRef: next.rollingForce.reference,
+      forcePercent: next.rollingForce.percentage,
+      rollGap: next.rollGap.actual,
+      rollGapRef: next.rollGap.reference,
+      rollRpm: next.rolls.upperWork.rpm,
+      // WORK ROLL / SHAPE
+      wrTopBending: next.rolls.upperWork.bendingForce,
+      wrBottomBending: next.rolls.lowerWork.bendingForce,
+      rollGapTilt: next.rollGap.tilt,
+      forceOs: next.rollingForce.os,
+      forceDs: next.rollingForce.ds,
+      // TENSION
+      entryTension: next.tension.entry,
+      exitTension: next.tension.exit,
+      entryTensionRef: next.tension.entryReference,
+      exitTensionRef: next.tension.exitReference,
+      entrySpecificTension: next.tension.entrySpecific,
+      exitSpecificTension: next.tension.exitSpecific,
+      // DRIVE
+      torque: next.drive.torque,
+      current: next.drive.current,
+      power: next.drive.power,
+      driveRpm: next.drive.rpm,
+      motorLoad: next.drive.torquePercentage,
+      // HYDRAULIC
+      loadingPressure: next.hydraulics.loadingPressure,
+      bendingPressure: next.hydraulics.bendingPressure,
+      gapPosition: next.hydraulics.gapPosition,
+      lpPressure: next.hydraulics.lpPressure,
+      // COIL / STRIP
+      coilDiameter: next.coil.diameter,
+      coilRemaining: next.coil.remainingLength,
+      passProgress: next.pass.progress * 100,
+      // SYSTEM
+      massFlowError: next.diagnostics.massFlowErrorPct,
+      updateRate: next.communication.updateRateHz,
+    })
+  }
 
   // ---- Alarms -----------------------------------------------------------
   useAlarmStore.getState().evaluate(next)

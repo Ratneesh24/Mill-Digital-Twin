@@ -1,0 +1,86 @@
+@*
+    MILL INTERLOCK — §13.2.
+
+    DRIVE ✓ → HYDRAULIC ✓ → TENSION ✓ → GAUGE ✓ → MILL READY ✓
+
+    "On failure, NAME THE CAUSE. Never display a bare 'MILL NOT READY'."
+
+    Three outcomes, not two: MILL READY (green), MILL READY UNVERIFIED (amber —
+    the feed cannot show it, §7.4), MILL NOT READY (red + reason).
+
+    Port of src/components/panels/InterlockStatus.tsx.
+*@
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="Mill interlock">
+    @if (Mill.Interlocks is { } chain)
+    {
+        <div class="mb-2 border px-2.5 py-2 @BannerClass(chain)">
+            <div class="text-body font-semibold tracking-[0.12em] @TitleClass(chain)">
+                @chain.Title
+            </div>
+            @if (chain.Reason is { Length: > 0 } reason)
+            {
+                <div class="mt-0.5 text-meta tracking-wide @(chain.Unverified ? "text-warning" : "text-alarm")">
+                    @reason
+                </div>
+            }
+            else if (chain.BlockingReason is { Length: > 0 } blocking)
+            {
+                <div class="mt-0.5 text-meta tracking-wide @(chain.Unverified ? "text-warning" : "text-alarm")">
+                    @blocking
+                </div>
+            }
+        </div>
+
+        <div class="space-y-[3px]">
+            @foreach (var node in chain.Nodes)
+            {
+                var noTag = node.Reason.EndsWith("NO TAG ON THIS FEED", StringComparison.Ordinal);
+                var isBlocking = node.Reason.Length > 0 && node.Reason == chain.BlockingReason;
+                <div title="@(node.Reason.Length > 0 ? node.Reason : null)" @key="node.Id"
+                     class="flex items-center justify-between gap-2 border-l-2 pl-2 @(node.Ok ? "border-l-healthy/50" : noTag ? "border-l-prov-notag" : isBlocking ? "border-l-alarm" : "border-l-line")">
+                    <span class="label truncate @(isBlocking && !noTag ? "text-alarm" : "")">@node.Label</span>
+                    <span class="text-micro tracking-wider @(node.Ok ? "text-healthy" : noTag ? "text-prov-notag" : isBlocking ? "text-alarm" : "text-text-faint")">
+                        @(node.Ok ? "OK" : noTag ? "NO TAG" : "BLOCKED")
+                    </span>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <p class="text-text-faint text-meta">Waiting for the interlock chain…</p>
+    }
+</Panel>
+
+@code {
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private static string BannerClass(Crm04.Contracts.InterlockChainDto chain) =>
+        chain.MillReady ? "border-healthy/45 bg-healthy/10"
+        : chain.Unverified ? "border-warning/55 bg-warning/10"
+        : "border-alarm/60 bg-alarm/10";
+
+    private static string TitleClass(Crm04.Contracts.InterlockChainDto chain) =>
+        chain.MillReady ? "text-healthy"
+        : chain.Unverified ? "text-warning"
+        : "text-alarm alarm-pulse";
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

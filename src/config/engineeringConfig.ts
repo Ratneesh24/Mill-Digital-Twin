@@ -99,6 +99,32 @@ export const STEEL_DENSITY = 7850
 /** Standard gravity, m/s² — for the t ↔ kN conversion. */
 export const GRAVITY = 9.80665
 
+/**
+ * kgf -> kN. Declared here rather than imported from `unitConversion` because
+ * that module imports GRAVITY from this one; going the other way as well would
+ * make the cycle load-order dependent for no benefit.
+ *
+ * The FPE manual states every tension in kgf (§1.4). This is the single point
+ * where those become the kN the rest of the twin works in.
+ */
+function kgfToKN(kgf: number): number {
+  return (kgf * GRAVITY) / 1000
+}
+
+/**
+ * Loading pressure at the mill's rated force, bar.
+ *
+ * Computed from the real cylinder geometry (§6.2, Table I item 19: ram type,
+ * Ø420, one per housing) so the hydraulic readout and the force readout are the
+ * same physical statement rather than two independently tuned numbers.
+ *
+ * 1 kg/cm² = 0.980665 bar.
+ */
+const ROLL_FORCE_RAM_AREA_CM2 =
+  2 * (Math.PI / 4) * Math.pow(millConfig.ratings.rollForceCylinderBore / 10, 2)
+const ROLL_FORCE_PRESSURE_AT_MAX_BAR =
+  ((millConfig.ratings.maxRollingForce * 1000) / ROLL_FORCE_RAM_AREA_CM2) * 0.980665
+
 export const engineeringConfig: EngineeringConfig = {
   /**
    * Low-carbon cold-rolling grade, annealed hot band. 450 MPa is a representative
@@ -159,11 +185,22 @@ export const engineeringConfig: EngineeringConfig = {
     torqueMax: millConfig.ratings.mainDriveRatedTorque,
   },
   /**
-   * Tension limits in kN. PLACEHOLDER envelope pending §22 item 2
-   * (actual limits per grade family). Sized for the narrow-complex demo coil
-   * (620 mm x 2.8 mm hot band) at 55-125 N/mm2 specific tension.
+   * Tension limits in kN, converted here — and only here — from the kgf figures
+   * the FPE manual states (§1.4): 6900 kg maximum up to 350 m/min, 690 kg
+   * minimum. Both tension reels are identical machines, so entry and exit share
+   * one envelope; which of them is currently "entry" is a role, not a rating.
+   *
+   * This is a NARROW mill with modest tension capability. 67.7 kN over a 450 mm
+   * x 2.8 mm section is only ~54 N/mm2, so the early passes run at low specific
+   * tension and absorb the difference as force. That is a real constraint of the
+   * machine, not a modelling convenience.
    */
-  tensionLimits: { entryMin: 3, entryMax: 220, exitMin: 5, exitMax: 280 },
+  tensionLimits: {
+    entryMin: kgfToKN(millConfig.ratings.reelTensionMinKg),
+    entryMax: kgfToKN(millConfig.ratings.reelTensionMaxKg),
+    exitMin: kgfToKN(millConfig.ratings.reelTensionMinKg),
+    exitMax: kgfToKN(millConfig.ratings.reelTensionMaxKg),
+  },
   speedLimits: {
     max: millConfig.ratings.maxMillSpeed,
     threadingSpeed: millConfig.ratings.threadingSpeed,
@@ -194,8 +231,19 @@ export const engineeringConfig: EngineeringConfig = {
   hagcGainI: 0.9,
   tensionTimeConstant: 0.55,
 
-  hydraulicPressureAtMaxForce: 280,
-  hydraulicPressureMin: 90,
+  /**
+   * DERIVED from the actual cylinder, not guessed. The manual gives two Ø420 ram-
+   * type roll force cylinders, one at the top of each housing (§6.2), and a 360 T
+   * mill rating (§1.1):
+   *
+   *   p = F / (2 · πD²/4) = 360 000 kgf / (2 · 1385.4 cm²) = 130 kg/cm² ≈ 127 bar
+   *
+   * which sits comfortably inside the manual's 210 kg/cm² working limit — as it
+   * must, since the rating is set by the stand, not by the hydraulics.
+   */
+  hydraulicPressureAtMaxForce: ROLL_FORCE_PRESSURE_AT_MAX_BAR,
+  /** Low-pressure alarm, bar — the same proportion of full load as before. */
+  hydraulicPressureMin: Math.round(ROLL_FORCE_PRESSURE_AT_MAX_BAR * 0.32),
   lpSystemPressure: 4.5,
 
   staleAfterMs: 3000,

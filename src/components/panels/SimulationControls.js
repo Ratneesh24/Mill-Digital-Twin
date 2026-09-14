@@ -1,0 +1,79 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+/**
+ * SIMULATION CONTROLS — §14.4.
+ *
+ * "Read-only monitoring is strictly separated from control commands. Phase 1 is
+ *  read-only. Simulation controls modify simulated state only. Real machine
+ *  commands are out of scope."
+ *
+ * Every button here reaches the SimulationEngine and nothing else. In LIVE mode
+ * the panel disables itself and says why — the UI must never imply that an
+ * operator action reached the mill.
+ *
+ * The controls are also the harness for the §17 validation tests: start, speed,
+ * gap, reverse, fast stop, high force, comms loss are all reachable from here.
+ */
+import { AlertTriangle, FastForward, Play, RotateCcw, Square } from 'lucide-react';
+import { toast } from 'sonner';
+import { isStartable, STATUS_LABEL } from '../../machine/machineStateMachine';
+import { interlockReadout } from '../../machine/interlockEngine';
+import { SCENARIOS } from '../../simulation/simulationScenarios';
+import { selectInterlockChain, useMachineStore } from '../../store/machineStore';
+import { cn } from '../ui/cn';
+import { Panel } from '../common/Panel';
+export function SimulationControls() {
+    const mode = useMachineStore((s) => s.state.operatingMode);
+    const status = useMachineStore((s) => s.state.machineStatus);
+    const comm = useMachineStore((s) => s.state.communication);
+    const chain = useMachineStore(selectInterlockChain);
+    const agc = useMachineStore((s) => s.state.controls.agc);
+    const scenario = useMachineStore((s) => s.scenario);
+    const send = useMachineStore((s) => s.sendCommand);
+    const setScenario = useMachineStore((s) => s.setScenario);
+    const readOnly = mode === 'LIVE';
+    const readout = interlockReadout(chain);
+    const feedDown = !comm.connected || comm.stale;
+    const needsReset = status === 'FAST_STOP' || status === 'FAULT';
+    const canStart = !readOnly && isStartable(status) && chain.millReady && !feedDown && !needsReset;
+    const blockReason = needsReset
+        ? `Mill is in ${STATUS_LABEL[status]} — press RESET before START.`
+        : !isStartable(status)
+            ? `START is not meaningful while ${STATUS_LABEL[status]}.`
+            : feedDown
+                ? `Data feed ${comm.connected ? 'is STALE' : 'is LOST'} — START waits for fresh data.`
+                : !chain.millReady
+                    ? (readout.reason ?? 'Mill interlock is holding the start.')
+                    : null;
+    const handleStart = () => {
+        if (canStart) {
+            send({ type: 'START' });
+            return;
+        }
+        toast.error('START blocked', { description: blockReason ?? undefined });
+    };
+    return (_jsx(Panel, { title: "Simulation controls", right: _jsx("span", { className: cn('text-micro tracking-wider', readOnly ? 'text-alarm' : 'text-prov-simulated'), children: readOnly ? 'DISABLED — LIVE IS READ-ONLY' : 'SIMULATED STATE ONLY' }), children: _jsxs("fieldset", { disabled: readOnly, className: "min-w-0", children: [_jsxs("div", { className: "grid grid-cols-4 gap-1.5", children: [_jsx(Cmd, { label: "START", icon: _jsx(Play, { size: 13, "aria-hidden": true }), onClick: handleStart, tone: canStart ? 'healthy' : 'blocked', title: canStart ? 'Start rolling' : (blockReason ?? 'Start rolling') }), _jsx(Cmd, { label: "STOP", icon: _jsx(Square, { size: 13, "aria-hidden": true }), onClick: () => send({ type: 'STOP' }) }), _jsx(Cmd, { label: "FAST STOP", icon: _jsx(FastForward, { size: 13, "aria-hidden": true }), onClick: () => send({ type: 'FAST_STOP' }), tone: "trip" }), _jsx(Cmd, { label: "RESET", icon: _jsx(RotateCcw, { size: 13, "aria-hidden": true }), onClick: () => send({ type: 'RESET' }), tone: needsReset ? 'reset' : undefined, title: needsReset ? 'Clear the latch so the mill can start again' : 'Reset latched stops' })] }), !readOnly && blockReason && (_jsxs("p", { role: "status", className: "text-warning mt-1.5 flex items-start gap-1 text-micro leading-snug", children: [_jsx(AlertTriangle, { size: 12, "aria-hidden": true, className: "mt-px shrink-0" }), _jsx("span", { children: blockReason })] })), _jsxs("div", { className: "border-line mt-2 border-t pt-2", children: [_jsx(TrimRow, { label: "Speed reference", unit: "m/min", steps: [-25, -5, 5, 25], onTrim: (value) => send({ type: 'TRIM_SPEED_REFERENCE', value }) }), _jsx(TrimRow, { label: "Roll gap S0", unit: "mm", steps: [-0.05, -0.01, 0.01, 0.05], decimals: 2, onTrim: (value) => send({ type: 'TRIM_ROLL_GAP', value }) }), _jsx(TrimRow, { label: "Entry tension", unit: "kN", steps: [-10, -2, 2, 10], onTrim: (value) => send({ type: 'TRIM_ENTRY_TENSION', value }) }), _jsx(TrimRow, { label: "Exit tension", unit: "kN", steps: [-10, -2, 2, 10], onTrim: (value) => send({ type: 'TRIM_EXIT_TENSION', value }) })] }), _jsxs("div", { className: "border-line mt-2 flex flex-wrap items-center gap-2 border-t pt-2", children: [_jsxs("button", { type: "button", "aria-pressed": agc === 'ON', onClick: () => send({ type: 'SET_AGC', flag: agc !== 'ON' }), className: cn('rounded-[10px] border px-2.5 py-1.5 text-micro tracking-wider transition-colors', agc === 'ON'
+                                ? 'border-healthy/50 text-healthy bg-healthy/10'
+                                : 'border-line text-text-faint'), children: ["AGC ", agc === 'ON' ? 'ON' : 'OFF'] }), _jsx("button", { type: "button", onClick: () => {
+                                send({ type: 'LOAD_NEXT_COIL' });
+                                toast.info('Next coil charged', {
+                                    description: 'Strip is unthreaded — START threads it before rolling.',
+                                });
+                            }, className: "border-line text-text-dim hover:border-normal/50 hover:text-normal rounded-[10px] border px-2.5 py-1.5 text-micro tracking-wider transition-colors", children: "CHARGE NEXT COIL" }), _jsx("span", { className: "text-text-faint num ml-auto text-micro", children: status })] }), _jsxs("div", { className: "border-line mt-2 border-t pt-2", children: [_jsx("div", { className: "label mb-1", children: "SCENARIO" }), _jsx("div", { className: "grid grid-cols-2 gap-1", children: SCENARIOS.map((s) => (_jsx("button", { type: "button", title: `${s.description}${s.validates ? `\n\n${s.validates}` : ''}`, "aria-pressed": scenario === s.id, onClick: () => setScenario(s.id), className: cn('rounded-[10px] border px-2 py-1.5 text-left text-micro leading-tight transition-colors', scenario === s.id
+                                    ? 'border-prov-simulated/60 bg-prov-simulated/10 text-prov-simulated'
+                                    : 'border-line text-text-faint hover:text-text-dim'), children: s.label }, s.id))) }), _jsx("p", { className: "text-text-faint mt-1.5 text-micro leading-snug", children: "Scenarios change PHYSICAL INPUTS \u2014 gap, material, media, link. The resulting force, thickness and current come out of the same equations as always; no value is injected." })] })] }) }));
+}
+function Cmd({ label, icon, onClick, tone, title, }) {
+    const toneClass = tone === 'healthy'
+        ? 'border-healthy/50 text-healthy hover:bg-healthy/10'
+        : tone === 'trip'
+            ? 'border-trip/60 text-trip hover:bg-trip/10'
+            : tone === 'blocked'
+                ? 'border-line text-text-faint bg-base-900'
+                : tone === 'reset'
+                    ? 'border-warning/60 bg-warning/10 text-warning alarm-pulse'
+                    : 'border-line text-text-dim hover:border-line-bright';
+    return (_jsxs("button", { type: "button", onClick: onClick, title: title, className: cn('inline-flex items-center justify-center gap-1 rounded-[10px] border px-1 py-2 text-micro tracking-wider transition-colors', toneClass), children: [icon, label] }));
+}
+function TrimRow({ label, unit, steps, decimals = 0, onTrim, }) {
+    return (_jsxs("div", { className: "flex flex-wrap items-center justify-between gap-x-2 gap-y-1 py-[3px]", children: [_jsxs("span", { className: "label min-w-[130px] flex-1", children: [label, " ", _jsxs("span", { className: "text-text-faint", children: ["(", unit, ")"] })] }), _jsx("div", { className: "flex shrink-0 gap-1", children: steps.map((step) => (_jsxs("button", { type: "button", "aria-label": `${step > 0 ? 'Increase' : 'Decrease'} ${label} by ${Math.abs(step).toFixed(decimals)} ${unit}`, onClick: () => onTrim(step), className: "border-line text-text-dim hover:border-normal/50 hover:text-normal num w-11 rounded-md border py-1 text-micro transition-colors", children: [step > 0 ? '+' : '', step.toFixed(decimals)] }, step))) })] }));
+}

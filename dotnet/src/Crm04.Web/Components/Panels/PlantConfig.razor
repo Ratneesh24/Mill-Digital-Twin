@@ -1,0 +1,44 @@
+@*
+    PLANT CONFIG — the mill dimensions the 3D scene builds itself from.
+
+    Served by GET /api/config/mill so the scene, this page and the physics
+    reference read the same numbers — the same guarantee millConfig.ts gives
+    the React app. Port of src/components/panels/PlantConfig.tsx (read side).
+*@
+@using Crm04.Domain.Configuration
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject ApiClient Api
+
+<Panel Title="Plant config">
+    @if (_cfg is null)
+    {
+        <p class="text-text-faint text-meta">Loading mill configuration…</p>
+    }
+    else
+    {
+        <p class="text-text-dim text-meta mb-2 leading-relaxed">
+            @_cfg.Identity.Mill · @_cfg.Identity.Plant — the geometry below is
+            what the 3D scene is built from.
+        </p>
+        <DerivedRow Label="Work roll diameter" Value="@JsNumber.ToFixed(_cfg.Geometry.WorkRollDiameter, 0)" Unit="mm" Tone="dim" />
+        <DerivedRow Label="Backup roll diameter" Value="@JsNumber.ToFixed(_cfg.Geometry.BackupRollDiameter, 0)" Unit="mm" Tone="dim" />
+        <DerivedRow Label="Barrel length" Value="@JsNumber.ToFixed(_cfg.Geometry.BarrelLength, 0)" Unit="mm" Tone="dim" />
+        <DerivedRow Label="Mill modulus" Value="@JsNumber.ToFixed(_cfg.Ratings.MillModulus, 0)" Unit="kN/mm" Tone="dim" />
+        <DerivedRow Label="Main drive" Value="@JsNumber.ToFixed(_cfg.Ratings.MainDriveRating, 0)" Unit="kW" Tone="dim" />
+        <DerivedRow Label="Rated torque" Value="@JsNumber.ToFixed(_cfg.Ratings.MainDriveRatedTorque, 1)" Unit="kNm" Tone="dim" />
+        <DerivedRow Label="Max speed" Value="@JsNumber.ToFixed(_cfg.Ratings.MaxMillSpeed, 0)" Unit="m/min" Tone="dim" />
+        <DerivedRow Label="Max force" Value="@JsNumber.ToFixed(_cfg.Ratings.MaxRollingForce, 0)" Unit="t" Tone="dim" />
+        <DerivedRow Label="Strip width max" Value="@JsNumber.ToFixed(_cfg.Ratings.MaxStripWidth, 0)" Unit="mm" Tone="dim" />
+    }
+</Panel>
+
+@code {
+    private MillConfig? _cfg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cfg = await Api.GetMillConfigAsync();
+    }
+}

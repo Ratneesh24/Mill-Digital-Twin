@@ -1,0 +1,25 @@
+@*
+    PASS HISTORY TRACKER - no UI. Watches the pass counter and freezes the tracked tag readings
+    as the "previous pass" baseline whenever a new pass begins. See PassHistory for why this is
+    observed rather than historied.
+*@
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject TagStore Tags
+@inject PassHistory Passes
+@inject UiTickService Ticker
+@implements IDisposable
+
+@code {
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick()
+    {
+        if (Mill.Summary is { } s)
+            Passes.NotePass(s.PassCurrent, tag => Tags.Get(tag).Number);
+    }
+
+    protected override bool ShouldRender() => false;
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

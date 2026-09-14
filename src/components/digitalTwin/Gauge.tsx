@@ -1,17 +1,23 @@
 /**
- * X-RAY THICKNESS GAUGE — the C-frames either side of the stand.
+ * ISOTOPE THICKNESS GAUGE — the C-frames either side of the stand (§5.8).
  *
- * Both gauges exist on the real CRM04 feed, which makes them one of the few
- * parts of the twin whose readings are genuinely MEASURED. The frame lights when
- * the gauge is ready and goes inert when it is not — the GAUGE_NOT_READY
- * scenario is visible in the scene, not only in the interlock panel (§13.2).
+ * "Isotope non-contact thickness gauge, one each at entry and delivery,
+ * identical construction." Both exist on the real CRM04 feed, which makes them
+ * one of the few parts of the twin whose readings are genuinely MEASURED. The
+ * frame lights when the gauge is ready and goes inert when it is not — the
+ * GAUGE_NOT_READY scenario is visible in the scene, not only in the interlock
+ * panel (§13.2).
+ *
+ * The `DTR` / `ETR` prop names the PHYSICAL station, which never moves. Which of
+ * the two is reading incoming and which delivered swaps with rolling direction,
+ * and that decision is made in the simulation engine from the reel role.
  */
 
 import { useRef } from 'react'
 import type { Mesh, MeshStandardMaterial } from 'three'
 import { useFrame } from '@react-three/fiber'
 import { useMachineStore } from '../../store/machineStore'
-import { MATERIALS, SCENE, SCENE_COLORS } from './twinMaterials'
+import { LINE, MATERIALS, SCENE, SCENE_COLORS } from './twinMaterials'
 
 interface Props {
   gauge: 'DTR' | 'ETR'
@@ -19,7 +25,7 @@ interface Props {
 
 export function Gauge({ gauge }: Props) {
   const headRef = useRef<Mesh>(null)
-  const x = gauge === 'ETR' ? SCENE.gaugeX : -SCENE.gaugeX
+  const x = gauge === 'ETR' ? LINE.entryGaugeX : LINE.deliveryGaugeX
 
   // Gauge readiness changes rarely, so a selector subscription is the right
   // tool here — this is not a per-frame value.
@@ -39,7 +45,9 @@ export function Gauge({ gauge }: Props) {
     )
   })
 
-  const frameHeight = 0.95
+  // Sized off the barrel so the C-frame stays in proportion to the stand: it has
+  // to straddle a 500 mm strip on a 600 mm barrel, not a wide-mill pass line.
+  const frameHeight = SCENE.barrelLength
   const armDepth = SCENE.barrelLength * 0.75
 
   return (

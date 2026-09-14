@@ -1,0 +1,90 @@
+@*
+    CONNECTION STATUS - the operating-mode selector and the feed's health.
+
+    Port of src/components/dashboard/ConnectionStatus.tsx.
+
+    THE MODE SELECTOR IS THE MOST INFORMATIVE CONTROL IN THE APPLICATION. The numbers are
+    identical across all three; what changes is what the twin ADMITS about them:
+
+      SIMULATION  every value badged SIM.
+      SIM 46-TAG  the same numbers with the provenance they will carry on the real CRM04 feed -
+                  force ESTIMATED, roll gap CALCULATED, hydraulics and bending NO TAG.
+      LIVE        the same availability rules, quality reading GOOD.
+
+    Switching it is a server-side decision: the API re-badges the feed and pushes a new catalogue,
+    because provenance belongs to TagFactory and not to a UI preference.
+*@
+@using Crm04.Domain.Types
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject ApiClient Api
+
+<div class="flex min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-2">
+    <div role="group" aria-label="Operating mode"
+         class="border-line bg-base-950 flex max-w-full flex-wrap rounded-full border p-1">
+        @foreach (var m in Modes)
+        {
+            <button type="button" title="@Help(m)" aria-pressed="@(Mode == m ? "true" : "false")"
+                    disabled="@_switching" @onclick="() => SetMode(m)" @key="m"
+                    class="@ModeClass(m)">
+                @Label(m)
+            </button>
+        }
+    </div>
+
+    <span class="text-meta inline-flex items-center gap-1.5 font-semibold @(Healthy ? "text-healthy" : "text-alarm")">
+        <Icon Name="@(Healthy ? "Wifi" : "WifiOff")" Size="15" />
+        <span class="text-text-faint font-medium">SOURCE</span>
+        @(Healthy ? "CONNECTED" : Stale ? "STALE" : "DISCONNECTED")
+    </span>
+</div>
+
+@code {
+    private static readonly OperatingMode[] Modes =
+        [OperatingMode.Simulation, OperatingMode.Sim46Tag, OperatingMode.Live];
+
+    private bool _switching;
+
+    private OperatingMode Mode => Mill.Summary?.Mode ?? OperatingMode.Simulation;
+    private bool Stale => Mill.Summary?.Communication.Stale ?? true;
+    private bool Healthy => (Mill.Summary?.Communication.Connected ?? false) && !Stale;
+
+    private static string Label(OperatingMode m) => m switch
+    {
+        OperatingMode.Simulation => "SIMULATION",
+        OperatingMode.Sim46Tag => "SIM · 46-TAG",
+        _ => "LIVE",
+    };
+
+    private static string Help(OperatingMode m) => m switch
+    {
+        OperatingMode.Simulation => "Full simulated mill. Every value badged SIM.",
+        OperatingMode.Sim46Tag => "The same numbers shown with the provenance they will carry on the real CRM04 feed.",
+        _ => "Gateway feed. Read-only with respect to the machine.",
+    };
+
+    private string ModeClass(OperatingMode m)
+    {
+        const string Base = "min-h-9 rounded-full px-3.5 py-1.5 text-meta font-semibold tracking-[0.06em] transition-colors";
+        if (Mode != m) return $"{Base} text-text-dim hover:text-text hover:bg-base-800";
+        return m == OperatingMode.Live
+            ? $"{Base} bg-healthy text-white shadow-sm"
+            : $"{Base} bg-brand text-white shadow-sm";
+    }
+
+    private async Task SetMode(OperatingMode m)
+    {
+        if (m == Mode || _switching) return;
+
+        _switching = true;
+        try
+        {
+            await Api.SetModeAsync(m);
+        }
+        finally
+        {
+            _switching = false;
+        }
+    }
+}

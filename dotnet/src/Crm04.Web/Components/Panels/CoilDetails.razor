@@ -1,0 +1,116 @@
+@*
+    COIL PANEL — §11.4.
+
+    "Coil ID, width, input/current/target/final thickness, length, remaining
+     length, diameter, pass"
+
+    Port of src/components/panels/CoilDetails.tsx. Hero stats are tag readouts;
+    pass-time and throughput are derived (dim treatment, never a badge).
+*@
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject ApiClient Api
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="Coil / entry">
+    <div class="mb-2">
+        <div class="label">COIL ID</div>
+        <div class="num text-text text-body font-semibold tracking-tight">@(Mill.Summary?.CoilId ?? "—")</div>
+        <div class="text-text-faint mt-0.5 text-micro">
+            @if (Mill.Summary?.CoilGrade is { } grade)
+            {
+                @grade
+            }
+            else
+            {
+                <span class="text-prov-notag border-prov-notag/60 rounded-full border border-dashed px-2 py-px">
+                    GRADE — NO TAG
+                </span>
+            }
+        </div>
+    </div>
+
+    @* Hero stats — the four numbers an operator reads first. *@
+    <div class="border-line grid grid-cols-2 gap-2 border-t pt-2.5">
+        <div class="bg-base-800/60 border-line min-w-0 rounded-xl border px-3 py-2">
+            <div class="label truncate">EXIT THICKNESS</div>
+            <div class="mt-0.5"><ValueReadout TagName="STRIP.THICKNESS" Size="md" Decimals="3" HideBadge="true" /></div>
+        </div>
+        <div class="bg-base-800/60 border-line min-w-0 rounded-xl border px-3 py-2">
+            <div class="label truncate">TARGET PASS</div>
+            <div class="mt-0.5"><ValueReadout TagName="STRIP.THICKNESS.REF" Size="md" Decimals="3" HideBadge="true" /></div>
+        </div>
+        <div class="bg-base-800/60 border-line min-w-0 rounded-xl border px-3 py-2">
+            <div class="label truncate">STRIP WIDTH</div>
+            <div class="mt-0.5"><ValueReadout TagName="STRIP.WIDTH" Size="md" Decimals="0" HideBadge="true" /></div>
+        </div>
+        <div class="bg-base-800/60 border-line min-w-0 rounded-xl border px-3 py-2">
+            <div class="label truncate">REDUCTION</div>
+            <div class="mt-0.5"><ValueReadout TagName="STRIP.REDUCTION" Size="md" Decimals="2" HideBadge="true" /></div>
+        </div>
+    </div>
+
+    <div class="border-line mt-2 border-t pt-1.5">
+        <ReadoutRow Label="Entry thickness" TagName="STRIP.THICKNESS.ENTRY" Decimals="3" />
+        <ReadoutRow Label="Coil length" TagName="COIL.LENGTH" Decimals="0" />
+        <ReadoutRow Label="Remaining this pass" TagName="COIL.REMAINING_LENGTH" Decimals="0" />
+        <ReadoutRow Label="Payoff diameter" TagName="COIL.DIAMETER" Decimals="0" />
+    </div>
+
+    <div class="border-line mt-1.5 border-t pt-1.5">
+        <DerivedRow Label="Pass time remaining" Value="@PassTimeText"
+                    Title="Remaining length divided by the mass-flow entry speed" />
+        <DerivedRow Label="Throughput" Value="@JsNumber.ToFixed(Tph, 1)" Unit="t/h"
+                    Title="h × w × v × ρ at the delivered section" />
+        <DerivedRow Label="Final thickness" Value="@FinalThicknessText" Unit="mm" Tone="dim" />
+    </div>
+</Panel>
+
+@code {
+    private int _seen = -1;
+    private string? _finalThickness;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ticker.Tick += OnTick;
+        try
+        {
+            var schedule = await Api.GetPassScheduleAsync();
+            if (schedule?.Coil is not null)
+                _finalThickness = JsNumber.ToFixed(schedule.Coil.FinalThickness, 3);
+        }
+        catch
+        {
+            // Schedule is supplementary; the panel must still render tags + derived rows.
+        }
+    }
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private double Tph => Mill.Summary?.ThroughputTph ?? 0d;
+
+    private string PassTimeText => Mill.Summary?.PassTimeRemainingSeconds is { } s
+        ? FormatDuration(s)
+        : "—";
+
+    private string FinalThicknessText => _finalThickness ?? "—";
+
+    private static string FormatDuration(double? seconds)
+    {
+        if (seconds is not { } s || double.IsNaN(s) || double.IsInfinity(s)) return "—";
+        var total = Math.Max(0, (int)Math.Round(s));
+        return $"{total / 60}:{(total % 60):D2}";
+    }
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

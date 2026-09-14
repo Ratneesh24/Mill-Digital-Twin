@@ -1,0 +1,44 @@
+@*
+    TWEEN NUMBER - a process value that glides to its new reading instead of snapping.
+
+    Blazor owns ONLY the data-target/data-decimals attributes; the text node belongs to the
+    crm04Tween loop in site.js (same split as the 3D labels: whoever writes the position owns
+    it). A 4 Hz render tick cannot produce smooth motion, but a 60 fps rAF ease over 300 ms can.
+    Reduced-motion or no-JS: the initial server text stays put, still correct.
+*@
+@using Crm04.Domain.Util
+@inject IJSRuntime JS
+
+<span class="num @SizeClass tracking-tight @ToneClass @Class"
+      data-tween="@Target.ToString("R", System.Globalization.CultureInfo.InvariantCulture)"
+      data-decimals="@Decimals" data-signed="@(Signed ? "1" : "0")">@Initial</span>
+
+@code {
+    [Parameter, EditorRequired] public double Target { get; set; }
+
+    [Parameter] public int Decimals { get; set; } = 1;
+
+    [Parameter] public bool Signed { get; set; }
+
+    [Parameter] public string SizeClass { get; set; } = "text-value";
+
+    [Parameter] public string ToneClass { get; set; } = "text-text";
+
+    [Parameter] public string Class { get; set; } = "";
+
+    private string Initial
+    {
+        get
+        {
+            var text = JsNumber.ToFixed(Target, Decimals);
+            return Signed && Target >= 0 ? "+" + text : text;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { await JS.InvokeVoidAsync("crm04TweenTick"); }
+        catch { /* helper absent in prerender - static text remains */ }
+    }
+}

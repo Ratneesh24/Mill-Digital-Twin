@@ -345,18 +345,18 @@ export function ValidationPanel() {
   const livePassed = live.filter((c) => c.pass).length
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[1fr_1.2fr] gap-1.5">
+    <div className="dashboard-page-grid grid h-full min-h-0 grid-cols-[1fr_1.2fr] gap-1.5">
       <Panel
         title="Continuous invariants — §18 coupling table"
         right={
           <span
-            className={`num text-[10px] ${livePassed === live.length ? 'text-healthy' : 'text-warning'}`}
+            className={`num text-micro ${livePassed === live.length ? 'text-healthy' : 'text-warning'}`}
           >
             {livePassed}/{live.length}
           </span>
         }
       >
-        <p className="text-text-dim mb-2 text-[10px] leading-relaxed">
+        <p className="text-text-dim mb-2 text-micro leading-relaxed">
           Evaluated against MachineState every frame. These are the couplings §18 asks a
           commissioning engineer to verify — checked live rather than asserted in a document.
         </p>
@@ -366,7 +366,7 @@ export function ValidationPanel() {
 
         <div className="border-line mt-3 border-t pt-2">
           <div className="label mb-1">MODEL SCOPE</div>
-          <p className="text-text-faint text-[10px] leading-relaxed">
+          <p className="text-text-faint text-micro leading-relaxed">
             Passing every invariant means the twin is INTERNALLY consistent — the numbers on the
             3D scene, the KPI bar and the trend chart are the same numbers, and they obey the
             relations in §8. It does not mean the twin is calibrated against{' '}
@@ -385,18 +385,18 @@ export function ValidationPanel() {
             <div key={test.id} className="border-line border-b px-2.5 py-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-text text-[11px]">
+                  <div className="text-text text-meta">
                     <span className="num text-text-faint mr-1.5">{test.id}</span>
                     {test.action}
                   </div>
-                  <div className="text-text-faint mt-0.5 text-[10px] leading-snug">
+                  <div className="text-text-faint mt-0.5 text-micro leading-snug">
                     {test.expected}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {results && (
                     <span
-                      className={`border px-1.5 text-[9px] leading-[16px] tracking-wider ${
+                      className={`border px-1.5 text-micro leading-[16px] tracking-wider ${
                         allPass
                           ? 'border-healthy/50 text-healthy bg-healthy/10'
                           : 'border-warning/50 text-warning bg-warning/10'
@@ -411,7 +411,7 @@ export function ValidationPanel() {
                       setBaselines((prev) => ({ ...prev, [test.id]: snapshot(state) }))
                       test.run?.()
                     }}
-                    className="border-line text-text-dim hover:border-normal/50 hover:text-normal border px-1.5 py-0.5 text-[9px] tracking-wider transition-colors"
+                    className="border-line text-text-dim hover:border-normal/50 hover:text-normal border px-1.5 py-0.5 text-micro tracking-wider transition-colors"
                     title={
                       test.run
                         ? 'Capture a baseline and run the stimulus'
@@ -446,12 +446,12 @@ function CheckRow({ check, compact = false }: { check: Check; compact?: boolean 
   return (
     <div className={`flex items-baseline gap-2 ${compact ? 'py-0' : 'border-line border-b py-1'}`}>
       <span
-        className={`shrink-0 text-[10px] leading-[14px] ${check.pass ? 'text-healthy' : 'text-warning'}`}
+        className={`shrink-0 text-micro leading-[14px] ${check.pass ? 'text-healthy' : 'text-warning'}`}
       >
         {check.pass ? '✓' : '○'}
       </span>
-      <span className="text-text-dim min-w-0 flex-1 truncate text-[10px]">{check.label}</span>
-      <span className="num text-text-faint shrink-0 text-[9px]">{check.detail}</span>
+      <span className="text-text-dim min-w-0 flex-1 truncate text-micro">{check.label}</span>
+      <span className="num text-text-faint shrink-0 text-micro">{check.detail}</span>
     </div>
   )
 }

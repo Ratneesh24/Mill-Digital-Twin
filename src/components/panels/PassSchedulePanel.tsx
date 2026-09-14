@@ -21,15 +21,17 @@ export function PassSchedulePanel({ dense = false }: { dense?: boolean }) {
     <Panel
       title="Pass schedule"
       right={
-        <span className="text-text-faint truncate text-[9px] normal-case">
+        <span className="text-text-faint truncate text-micro normal-case">
           {demoPassSchedule.source}
         </span>
       }
       bodyClassName="p-0"
     >
       <table className="w-full border-collapse">
-        <thead>
-          <tr className="text-text-faint border-line border-b text-[9px] tracking-wider">
+        {/* Sticky: the panel body is the scroll container and a long schedule
+            scrolls the column labels away otherwise. */}
+        <thead className="bg-base-850 sticky top-0 z-10">
+          <tr className="text-text-faint border-line border-b text-micro tracking-wider">
             <th className="px-2 py-1 text-left font-normal">PASS</th>
             <th className="px-2 py-1 text-left font-normal">DIR</th>
             <th className="px-2 py-1 text-right font-normal">IN → OUT (mm)</th>
@@ -51,9 +53,9 @@ export function PassSchedulePanel({ dense = false }: { dense?: boolean }) {
             return (
               <tr
                 key={p.pass}
-                className={`border-line border-b text-[11px] ${
+                className={`border-line border-b text-meta ${
                   isCurrent
-                    ? 'bg-normal/10 text-text'
+                    ? 'pass-current text-text'
                     : isDone
                       ? 'text-text-faint'
                       : 'text-text-dim'
@@ -61,11 +63,11 @@ export function PassSchedulePanel({ dense = false }: { dense?: boolean }) {
               >
                 <td className="px-2 py-1">
                   <span className="flex items-center gap-1.5">
-                    {isCurrent && <span className="bg-normal h-3 w-[3px]" />}
+                    {isCurrent && <span className="dot-glow bg-normal h-3 w-[3px]" />}
                     <span className={`num ${isCurrent ? 'font-semibold' : ''}`}>{p.pass}</span>
                   </span>
                 </td>
-                <td className="px-2 py-1 text-[9px] tracking-wider">
+                <td className="px-2 py-1 text-micro tracking-wider">
                   {p.direction === 'FORWARD' ? 'FWD →' : '← REV'}
                 </td>
                 <td className="num px-2 py-1 text-right">
@@ -91,13 +93,13 @@ export function PassSchedulePanel({ dense = false }: { dense?: boolean }) {
           <span className="label">
             PASS {currentPass} · {direction === 'FORWARD' ? 'FORWARD' : 'REVERSE'}
           </span>
-          <span className="num text-text-dim text-[10px]">
+          <span className="num text-text-dim text-micro">
             {(progress * 100).toFixed(0)}%
           </span>
         </div>
-        <div className="bg-base-800 border-line mt-1 h-[5px] border">
+        <div className="bg-base-800 border-line mt-1 h-[5px] overflow-hidden rounded-full border">
           <div
-            className="bg-normal h-full transition-[width] duration-300"
+            className="h-full rounded-full bg-gradient-to-r from-brand-deep via-brand to-normal transition-[width] duration-300"
             style={{ width: `${Math.min(progress * 100, 100)}%` }}
           />
         </div>

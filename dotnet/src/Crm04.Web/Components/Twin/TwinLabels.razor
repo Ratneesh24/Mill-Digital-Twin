@@ -1,0 +1,65 @@
+@*
+    Scene labels: the numbers that float beside the machine.
+
+    THE SPLIT THAT MAKES THIS WORK. Blazor renders the text; JavaScript renders the POSITION.
+    Neither writes the other's half.
+
+    The React app used drei's <Html> to put a ValueReadout at a 3D point, deliberately, so that
+    the number beside the roll bite is produced by the SAME component as the number in the KPI bar.
+    That property is worth keeping, and this is how it survives without drei: each label carries a
+    data-anchor, the twin's projector converts the anchor's 3D position to a screen transform every
+    frame, and the ValueReadout inside re-renders on its own schedule.
+
+    NOTE THE ABSENCE OF ANY style ATTRIBUTE BELOW, and do not add one. Blazor's DOM diff only
+    patches attributes it rendered; because it never renders style, the inline transform set by
+    JavaScript is invisible to the diff and survives every re-render of the value inside. Adding
+    style="@something" here would make Blazor start owning the attribute and the labels would
+    snap back to the top-left corner on every tick.
+*@
+@using Crm04.Web.Components.Common
+
+<div class="twin-label" data-anchor="STAND">
+    <div class="label-chip">
+        <span class="label-title">ROLL FORCE</span>
+        <ValueReadout TagName="ROLL.FORCE.ACTUAL" Size="sm" />
+    </div>
+</div>
+
+@* ENTRY and EXIT are LOGICAL ends, not fixed sides. The projector reads the rolling direction
+   and swaps their anchors on a reversal, exactly when the strip changes direction (§1). *@
+<div class="twin-label" data-anchor="ENTRY">
+    <div class="label-chip label-entry">
+        <span class="label-title">ENTRY</span>
+        <ValueReadout TagName="STRIP.THICKNESS.ENTRY" Size="sm" />
+        <ValueReadout TagName="TENSION.ENTRY" Size="sm" />
+    </div>
+</div>
+
+<div class="twin-label" data-anchor="EXIT">
+    <div class="label-chip label-exit">
+        <span class="label-title">EXIT</span>
+        <ValueReadout TagName="STRIP.THICKNESS" Size="sm" />
+        <ValueReadout TagName="TENSION.EXIT" Size="sm" />
+    </div>
+</div>
+
+<div class="twin-label" data-anchor="DTR">
+    <div class="label-chip">
+        <span class="label-title">DTR</span>
+        <ValueReadout TagName="DTR.DIAMETER" Size="sm" HideBadge="true" />
+    </div>
+</div>
+
+<div class="twin-label" data-anchor="ETR">
+    <div class="label-chip">
+        <span class="label-title">ETR</span>
+        <ValueReadout TagName="ETR.DIAMETER" Size="sm" HideBadge="true" />
+    </div>
+</div>
+
+<div class="twin-label" data-anchor="POR">
+    <div class="label-chip">
+        <span class="label-title">POR</span>
+        <ValueReadout TagName="POR.DIAMETER" Size="sm" HideBadge="true" />
+    </div>
+</div>

@@ -1,0 +1,31 @@
+## Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+.vs/
+
+## Generated client assets (rebuilt by the MSBuild ClientApp target)
+src/Crm04.Web/ClientApp/node_modules/
+src/Crm04.Web/wwwroot/css/app.css
+src/Crm04.Web/wwwroot/js/twin.bundle.js
+src/Crm04.Web/wwwroot/js/twin.bundle.js.map
+src/Crm04.Web/wwwroot/js/charts.bundle.js
+src/Crm04.Web/wwwroot/js/charts.bundle.js.map
+
+## Generated replay data (produced by scripts/exportSimFrames.ts).
+## Large and reproducible - regenerate rather than commit.
+data/replay/*.jsonl
+data/replay/*.csv
+
+## Generated seed SQL (produced from src/data/tagDefinitions.ts).
+## Regenerated so it cannot drift from the TypeScript catalogue.
+db/seed/tag_definitions.sql
+
+## Local secrets - the Oracle connection string lives in user-secrets or an env var,
+## never in appsettings.json.
+appsettings.Local.json
+*.env

@@ -1,0 +1,336 @@
+@*
+    Multi-pen trend chart, rendered as inline SVG.
+
+    A DEVIATION FROM THE PLAN, and worth stating. The plan specified uPlot through JS interop and
+    rejected SVG on the grounds that "240 points x 6 series = 1,440 SVG nodes diffed by Blazor
+    twice a second". That objection is about NODE COUNT, and it does not apply here: each series
+    is ONE <path> element carrying one `d` attribute, so the whole plot is about a dozen nodes and
+    a repaint is a handful of string comparisons. It also removes an npm dependency, a bundler and
+    a build step from a project that has to run on an isolated plant network.
+
+    What JavaScript does here: HOVER ONLY. The curves, axes and limits are all Blazor-rendered
+    SVG; a small helper (crm04TrendHover in site.js) positions a cursor line and a tooltip from
+    data embedded beside the chart. No interop on the hover path, no re-render per mousemove.
+
+    PER-PEN AUTOSCALE. Each series is scaled to its own range, as a process trend viewer does,
+    because a shared axis carrying millimetres and tonnes renders the millimetres as a flat line
+    on the floor of the chart. Each pen's own range is printed in the legend so the shape can
+    never be mistaken for an absolute reading.
+*@
+@using Crm04.Contracts
+@using Crm04.Domain.Telemetry
+@using Crm04.Domain.Util
+@using System.Globalization
+@using System.Text
+@using System.Text.Json
+@inject IJSRuntime JS
+
+<div class="chart">
+    @if (Pens.Count == 0)
+    {
+        <div class="chart-empty">Select a signal to plot.</div>
+    }
+    else if (Pens.All(p => p.Points.Length < 2))
+    {
+        <div class="chart-empty">
+            Collecting data… @(Pens.Max(p => p.Points.Length)) point(s) so far.
+            <span class="chart-empty-sub">The buffer fills at one point per @FormatInterval().</span>
+        </div>
+    }
+    else
+    {
+        <div class="chart-svg-wrap" @ref="_wrap"
+             data-w="@F(W)" data-h="@F(H)" data-pl="@F(PlotLeft)" data-pt="@F(PlotTop)"
+             data-pw="@F(PlotW)" data-ph="@F(PlotH)" data-tmin="@TMin" data-tmax="@TMax">
+            <svg class="chart-svg" viewBox="0 0 @W @H" preserveAspectRatio="none" role="img">
+                @* Horizontal gridlines. Fixed count, so they are cheap and stable across repaints. *@
+                @for (var i = 0; i <= 4; i++)
+                {
+                    var y = PlotTop + PlotH * i / 4.0;
+                    <line x1="@F(PlotLeft)" y1="@F(y)" x2="@F(PlotLeft + PlotW)" y2="@F(y)" class="grid" />
+                }
+
+                @* Reference lines, drawn only when a single pen is selected. With several pens on
+                   independent scales a limit line belongs to only one of them, and drawing them all
+                   would be a thicket of lines that mean different things. *@
+                @if (Pens.Count == 1 && Limits is not null && Limits.TryGetValue(Pens[0].Key, out var limit))
+                {
+                    @foreach (var (value, cls) in LimitLines(limit))
+                    {
+                        var y = ScaleY(Pens[0], value);
+                        if (y is { } yy)
+                        {
+                            <line x1="@F(PlotLeft)" y1="@F(yy)" x2="@F(PlotLeft + PlotW)" y2="@F(yy)"
+                                  class="limit @cls" />
+                        }
+                    }
+                }
+
+                @foreach (var pen in Pens)
+                {
+                    @* One path per series. This is the whole performance argument. *@
+                    <path d="@BuildSmoothPath(pen)" fill="none" stroke="@pen.Color"
+                          stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"
+                          stroke-dasharray="@(pen.IsReference ? "5 4" : null)" @key="pen.Key" />
+                }
+
+                <line x1="@F(PlotLeft)" y1="@F(PlotTop + PlotH)" x2="@F(PlotLeft + PlotW)" y2="@F(PlotTop + PlotH)" class="axis" />
+            </svg>
+            <script type="application/json" class="chart-data">@((MarkupString)HoverJson())</script>
+            @* Hover affordances are rendered by Blazor and only MUTATED by JS (position/content).
+               JS must never appendChild here: anything it appends is outside the render tree and
+               gets orphaned or wiped on the next 500 ms refresh while dataset.wired blocks
+               rewiring — which is exactly how the tooltip died after the first paint. *@
+            <div class="chart-hover-line" aria-hidden="true"></div>
+            <div class="chart-tooltip" role="status" aria-hidden="true"></div>
+            @foreach (var pen in Pens)
+            {
+                <div class="chart-hover-dot" aria-hidden="true" data-pen="@pen.Key" style="background:@pen.Color" @key="@("dot"+pen.Key)"></div>
+            }
+        </div>
+
+        <div class="chart-xaxis">
+            @foreach (var tick in Ticks)
+            {
+                <span @key="tick">@tick</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>One plotted series, already joined to its catalogue metadata.</summary>
+    public sealed record Pen(
+        string Key,
+        string Label,
+        string Unit,
+        string Color,
+        int Decimals,
+        bool IsReference,
+        TrendSeriesDto Series)
+    {
+        public double[] Points => Series.V;
+
+        public long[] Times => Series.T;
+
+        public double Min => Points.Length == 0 ? 0 : Points.Min();
+
+        public double Max => Points.Length == 0 ? 0 : Points.Max();
+
+        public double? Latest => Points.Length == 0 ? null : Points[^1];
+    }
+
+    [Parameter, EditorRequired] public IReadOnlyList<Pen> Pens { get; set; } = [];
+
+    [Parameter] public IReadOnlyDictionary<string, TrendLimitDto>? Limits { get; set; }
+
+    [Parameter] public long WindowMs { get; set; } = 300_000;
+
+    // A fixed viewBox with preserveAspectRatio="none" lets the SVG stretch to whatever the panel
+    // gives it, so no resize observer or JS is needed to keep it filling the space.
+    private const double W = 1000, H = 320;
+    private const double PlotLeft = 8, PlotTop = 8, PlotW = W - 16, PlotH = H - 24;
+
+    private ElementReference _wrap;
+
+    private static string F(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>Right edge of the time axis: the newest point across all pens.</summary>
+    private long TMax => Pens.Count == 0 ? 0 : Pens.Max(p => p.Times.Length == 0 ? 0 : p.Times[^1]);
+
+    private long TMin => TMax - WindowMs;
+
+    /// <summary>Six time labels across the window, like the reference page.</summary>
+    private List<string> Ticks
+    {
+        get
+        {
+            var list = new List<string>(6);
+            if (TMax <= 0) return list;
+            for (var i = 0; i <= 5; i++)
+            {
+                var t = TMin + (TMax - TMin) * i / 5.0;
+                list.Add(DateTimeOffset.FromUnixTimeMilliseconds((long)t).ToLocalTime().ToString("h:mm:ss tt"));
+            }
+            return list;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Wire hover once: the helper is idempotent (dataset.wired) and re-reads the embedded
+        // JSON on every mousemove, so re-invoking per render is a pure roundtrip cost. It used
+        // to run after EVERY render, which kept the circuit busy while dialogs were open.
+        if (!firstRender) return;
+        try { await JS.InvokeVoidAsync("crm04TrendHover"); }
+        catch { /* helper absent in prerender — hover simply stays off */ }
+    }
+
+    private (int Count, int Points, long LastT, long LastVBits, long Window, int Limits) _seenSig;
+    private bool _seenOnce;
+
+    /// <summary>
+    /// Skip renders whose data is identical: same pen count, same total points, same newest
+    /// sample, same window. A KPI dialog's series never changes after fetch, so without this
+    /// gate every tag tick re-serializes ~30 KB of hover JSON and recomputes every path — the
+    /// backlog that made dialog close feel stuck behind a queue.
+    /// </summary>
+    protected override bool ShouldRender()
+    {
+        var sig = Signature();
+        if (_seenOnce && sig == _seenSig) return false;
+        _seenOnce = true;
+        _seenSig = sig;
+        return true;
+    }
+
+    private (int Count, int Points, long LastT, long LastVBits, long Window, int Limits) Signature()
+    {
+        var points = 0;
+        long lastT = 0;
+        long lastV = 0;
+        foreach (var p in Pens)
+        {
+            points += p.Points.Length;
+            if (p.Times.Length > 0) lastT = Math.Max(lastT, p.Times[^1]);
+            if (p.Points.Length > 0) lastV ^= BitConverter.DoubleToInt64Bits(p.Points[^1]);
+        }
+
+        return (Pens.Count, points, lastT, lastV, WindowMs, Limits?.Count ?? 0);
+    }
+
+    private double XOf(long t)
+    {
+        var span = (double)(TMax - TMin);
+        if (span <= 0) return PlotLeft;
+        var f = (t - TMin) / span;
+        f = Math.Clamp(f, 0d, 1d);
+        return PlotLeft + PlotW * f;
+    }
+
+    private double YOf(Pen pen, double value)
+    {
+        var min = pen.Min - Math.Abs(pen.Min) * 0.03 - 1e-9;
+        var max = pen.Max + Math.Abs(pen.Max) * 0.03 + 1e-9;
+        var span = max - min;
+        if (span < 1e-12) return PlotTop + PlotH - 3;
+        return PlotTop + PlotH - (value - min) / span * PlotH;
+    }
+
+    /// <summary>
+    /// One smooth SVG path per series, X mapped from wall-clock time.
+    ///
+    /// Catmull-Rom through the points, drawn as cubic beziers — the same monotone look as the
+    /// reference page. A PARTIALLY FILLED BUFFER still draws only its own time range: points
+    /// older than the window edge clamp to the edge rather than stretching across the plot.
+    /// A dead-flat series draws along the bottom, where the reference page puts it.
+    /// </summary>
+    private string BuildSmoothPath(Pen pen)
+    {
+        var points = pen.Points;
+        var times = pen.Times;
+        if (points.Length < 2) return string.Empty;
+
+        if (pen.Max - pen.Min < 1e-12)
+        {
+            var yb = PlotTop + PlotH - 3;
+            return $"M{F(XOf(times[0]))} {F(yb)}L{F(XOf(times[^1]))} {F(yb)}";
+        }
+
+        var n = points.Length;
+        var xs = new double[n];
+        var ys = new double[n];
+        for (var i = 0; i < n; i++)
+        {
+            xs[i] = XOf(times[i]);
+            ys[i] = YOf(pen, points[i]);
+        }
+
+        var sb = new StringBuilder(n * 24);
+        sb.Append('M').Append(F(xs[0])).Append(' ').Append(F(ys[0]));
+        for (var i = 0; i < n - 1; i++)
+        {
+            var p0x = i == 0 ? xs[0] : xs[i - 1];
+            var p0y = i == 0 ? ys[0] : ys[i - 1];
+            var p1x = xs[i];
+            var p1y = ys[i];
+            var p2x = xs[i + 1];
+            var p2y = ys[i + 1];
+            var p3x = i + 2 >= n ? xs[n - 1] : xs[i + 2];
+            var p3y = i + 2 >= n ? ys[n - 1] : ys[i + 2];
+
+            var c1x = p1x + (p2x - p0x) / 6.0;
+            var c1y = p1y + (p2y - p0y) / 6.0;
+            var c2x = p2x - (p3x - p1x) / 6.0;
+            var c2y = p2y - (p3y - p1y) / 6.0;
+
+            sb.Append('C').Append(F(c1x)).Append(' ').Append(F(c1y)).Append(' ')
+              .Append(F(c2x)).Append(' ').Append(F(c2y)).Append(' ')
+              .Append(F(p2x)).Append(' ').Append(F(p2y));
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>A limit's y position in this pen's own padded scale, or null when off-plot.</summary>
+    private double? ScaleY(Pen pen, double value)
+    {
+        var min = pen.Min - Math.Abs(pen.Min) * 0.03 - 1e-9;
+        var max = pen.Max + Math.Abs(pen.Max) * 0.03 + 1e-9;
+        if (value < min || value > max) return null;
+        return PlotTop + PlotH - (value - min) / (max - min) * PlotH;
+    }
+
+    private static IEnumerable<(double Value, string Class)> LimitLines(TrendLimitDto l)
+    {
+        if (l.WarningLow is { } wl) yield return (wl, "limit-warning");
+        if (l.WarningHigh is { } wh) yield return (wh, "limit-warning");
+        if (l.AlarmLow is { } al) yield return (al, "limit-alarm");
+        if (l.AlarmHigh is { } ah) yield return (ah, "limit-alarm");
+        if (l.TripHigh is { } th) yield return (th, "limit-trip");
+    }
+
+    /// <summary>Hover payload for crm04TrendHover: per-pen samples with their own scales.</summary>
+    private string HoverJson()
+    {
+        var pens = Pens.Select(p => new
+        {
+            label = p.Label,
+            unit = p.Unit,
+            color = p.Color,
+            decimals = p.Decimals,
+            t = p.Times,
+            v = p.Points.Select(x => Math.Round(x, 6)).ToArray(),
+            min = p.Min,
+            max = p.Max,
+            flat = p.Max - p.Min < 1e-12,
+        }).ToArray();
+        return JsonSerializer.Serialize(new { pens });
+    }
+
+    private string FormatInterval()
+    {
+        var ms = WindowMs / 240.0;
+        return ms < 1000 ? $"{JsNumber.ToFixed(ms, 0)} ms" : $"{JsNumber.ToFixed(ms / 1000, 1)} s";
+    }
+
+    /// <summary>
+    /// Drop non-finite samples. Sparse windows (an hour of replay with gaps) arrive with NaN
+    /// buckets; one NaN poisons LINQ Min/Max and every path coordinate, rendering an invisible
+    /// curve. Filtering pairs keeps time alignment honest - no interpolation is invented.
+    /// </summary>
+    public static TrendSeriesDto WithoutGaps(TrendSeriesDto series)
+    {
+        if (series.V.Length != series.T.Length || series.V.Length == 0) return series;
+        var ok = new List<int>(series.V.Length);
+        for (var i = 0; i < series.V.Length; i++)
+        {
+            if (double.IsFinite(series.V[i])) ok.Add(i);
+        }
+
+        if (ok.Count == series.V.Length) return series;
+        return new TrendSeriesDto(
+            series.Key,
+            ok.Select((i) => series.T[i]).ToArray(),
+            ok.Select((i) => series.V[i]).ToArray());
+    }
+}

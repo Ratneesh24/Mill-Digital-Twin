@@ -92,78 +92,65 @@ class SignalSeries {
  * hues that remain legible beside the Tata Steel blue primary.
  */
 export const SIGNALS: SignalDescriptor[] = [
-  {
-    key: 'speed',
-    label: 'Mill speed',
-    unit: 'm/min',
-    color: '#005a9c',
-    decimals: 0,
-    tagName: 'MILL.SPEED.ACTUAL',
-  },
-  {
-    key: 'thickness',
-    label: 'Thickness',
-    unit: 'mm',
-    color: '#187447',
-    decimals: 3,
-    tagName: 'STRIP.THICKNESS',
-  },
-  {
-    key: 'thicknessDeviation',
-    label: 'Thickness deviation',
-    unit: 'µm',
-    color: '#976000',
-    decimals: 1,
-    tagName: 'STRIP.THICKNESS.DEVIATION',
-  },
-  {
-    key: 'rollingForce',
-    label: 'Rolling force',
-    unit: 't',
-    color: '#c13335',
-    decimals: 0,
-    tagName: 'ROLL.FORCE.ACTUAL',
-  },
-  {
-    key: 'rollGap',
-    label: 'Roll gap',
-    unit: 'mm',
-    color: '#7050a2',
-    decimals: 3,
-    tagName: 'ROLL.GAP.ACTUAL',
-  },
-  {
-    key: 'entryTension',
-    label: 'Entry tension',
-    unit: 'kN',
-    color: '#0b6e7a',
-    decimals: 1,
-    tagName: 'TENSION.ENTRY',
-  },
-  {
-    key: 'exitTension',
-    label: 'Exit tension',
-    unit: 'kN',
-    color: '#a91e63',
-    decimals: 1,
-    tagName: 'TENSION.EXIT',
-  },
-  {
-    key: 'torque',
-    label: 'Drive torque',
-    unit: 'kNm',
-    color: '#b54708',
-    decimals: 1,
-    tagName: 'DRIVE.TORQUE',
-  },
-  {
-    key: 'current',
-    label: 'Drive current',
-    unit: 'A',
-    color: '#47586e',
-    decimals: 0,
-    tagName: 'DRIVE.CURRENT',
-  },
+  // ── THICKNESS ────────────────────────────────────────────────────────────
+  { key: 'thickness', label: 'Exit thickness', unit: 'mm', color: '#187447', decimals: 3, group: 'THICKNESS', tagName: 'STRIP.THICKNESS' },
+  { key: 'thicknessEntry', label: 'Entry thickness', unit: 'mm', color: '#3f9c6d', decimals: 3, group: 'THICKNESS', tagName: 'STRIP.THICKNESS.ENTRY' },
+  { key: 'thicknessTarget', label: 'Target thickness', unit: 'mm', color: '#7fb79b', decimals: 3, group: 'THICKNESS', tagName: 'STRIP.THICKNESS.REF', isReference: true },
+  { key: 'thicknessDeviation', label: 'Thickness deviation', unit: 'µm', color: '#976000', decimals: 1, group: 'THICKNESS', tagName: 'STRIP.THICKNESS.DEVIATION' },
+  { key: 'reduction', label: 'Reduction', unit: '%', color: '#0f766e', decimals: 2, group: 'THICKNESS', tagName: 'STRIP.REDUCTION' },
+  { key: 'gaugeDtr', label: 'DTR gauge thickness', unit: 'mm', color: '#2f8f5b', decimals: 3, group: 'THICKNESS', tagName: 'GAUGE.DTR.THICKNESS' },
+  { key: 'gaugeEtr', label: 'ETR gauge thickness', unit: 'mm', color: '#5aa87f', decimals: 3, group: 'THICKNESS', tagName: 'GAUGE.ETR.THICKNESS' },
+
+  // ── ROLLING ──────────────────────────────────────────────────────────────
+  { key: 'speed', label: 'Mill speed', unit: 'm/min', color: '#005a9c', decimals: 0, group: 'ROLLING', tagName: 'MILL.SPEED.ACTUAL' },
+  { key: 'speedRef', label: 'Speed setpoint', unit: 'm/min', color: '#6fa8d0', decimals: 0, group: 'ROLLING', tagName: 'MILL.SPEED.REF', isReference: true },
+  { key: 'rollingForce', label: 'Roll force', unit: 't', color: '#c13335', decimals: 0, group: 'ROLLING', tagName: 'ROLL.FORCE.ACTUAL' },
+  { key: 'rollingForceRef', label: 'Roll force setpoint', unit: 't', color: '#e08a8b', decimals: 0, group: 'ROLLING', tagName: 'ROLL.FORCE.REF', isReference: true },
+  { key: 'forcePercent', label: 'Force utilisation', unit: '%', color: '#a3423f', decimals: 1, group: 'ROLLING', tagName: 'ROLL.FORCE.ACTUAL' },
+  { key: 'rollGap', label: 'Roll gap', unit: 'mm', color: '#7050a2', decimals: 3, group: 'ROLLING', tagName: 'ROLL.GAP.ACTUAL' },
+  { key: 'rollGapRef', label: 'Gap setpoint S0', unit: 'mm', color: '#a793c7', decimals: 3, group: 'ROLLING', tagName: 'ROLL.GAP.REF', isReference: true },
+  { key: 'rollRpm', label: 'Work roll RPM', unit: 'rpm', color: '#4c1d95', decimals: 0, group: 'ROLLING', tagName: 'WR.TOP.RPM' },
+
+  // ── WORK ROLL / SHAPE ────────────────────────────────────────────────────
+  { key: 'wrTopBending', label: 'WR bending (top)', unit: 'kN', color: '#b45309', decimals: 0, group: 'WORK ROLL', tagName: 'WR.TOP.BENDING' },
+  { key: 'wrBottomBending', label: 'WR bending (bottom)', unit: 'kN', color: '#d97706', decimals: 0, group: 'WORK ROLL', tagName: 'WR.BOTTOM.BENDING' },
+  { key: 'rollGapTilt', label: 'Tilting (OS−DS)', unit: 'µm', color: '#92400e', decimals: 1, group: 'WORK ROLL', tagName: 'ROLL.GAP.TILT' },
+  { key: 'forceOs', label: 'Roll force OS', unit: 't', color: '#be123c', decimals: 0, group: 'WORK ROLL', tagName: 'ROLL.FORCE.OS' },
+  { key: 'forceDs', label: 'Roll force DS', unit: 't', color: '#e11d48', decimals: 0, group: 'WORK ROLL', tagName: 'ROLL.FORCE.DS' },
+
+  // ── TENSION ──────────────────────────────────────────────────────────────
+  { key: 'entryTension', label: 'Entry tension', unit: 'kN', color: '#0b6e7a', decimals: 1, group: 'TENSION', tagName: 'TENSION.ENTRY' },
+  { key: 'exitTension', label: 'Exit tension', unit: 'kN', color: '#a91e63', decimals: 1, group: 'TENSION', tagName: 'TENSION.EXIT' },
+  { key: 'entryTensionRef', label: 'Entry tension setpoint', unit: 'kN', color: '#66a6ae', decimals: 1, group: 'TENSION', tagName: 'TENSION.ENTRY.REF', isReference: true },
+  { key: 'exitTensionRef', label: 'Exit tension setpoint', unit: 'kN', color: '#d178a2', decimals: 1, group: 'TENSION', tagName: 'TENSION.EXIT.REF', isReference: true },
+  { key: 'entrySpecificTension', label: 'Entry specific tension', unit: 'N/mm²', color: '#08505a', decimals: 1, group: 'TENSION', tagName: 'TENSION.ENTRY' },
+  { key: 'exitSpecificTension', label: 'Exit specific tension', unit: 'N/mm²', color: '#7d1547', decimals: 1, group: 'TENSION', tagName: 'TENSION.EXIT' },
+
+  // ── DRIVE ────────────────────────────────────────────────────────────────
+  { key: 'torque', label: 'Drive torque', unit: 'kNm', color: '#b54708', decimals: 1, group: 'DRIVE', tagName: 'DRIVE.TORQUE' },
+  { key: 'current', label: 'Drive current', unit: 'A', color: '#47586e', decimals: 0, group: 'DRIVE', tagName: 'DRIVE.CURRENT' },
+  { key: 'driveRpm', label: 'Drive RPM', unit: 'rpm', color: '#334155', decimals: 0, group: 'DRIVE', tagName: 'DRIVE.RPM' },
+  { key: 'motorLoad', label: 'Motor load', unit: '%', color: '#7c2d12', decimals: 1, group: 'DRIVE', tagName: 'DRIVE.TORQUE' },
+
+  // ── ENERGY ───────────────────────────────────────────────────────────────
+  // Instantaneous power only. Cumulative kWh (coil and day) is declared but
+  // UNAVAILABLE — it needs historian integration, so there is nothing to trend.
+  { key: 'power', label: 'Current power', unit: 'kW', color: '#1e40af', decimals: 0, group: 'ENERGY', tagName: 'DRIVE.POWER' },
+
+  // ── HYDRAULIC ────────────────────────────────────────────────────────────
+  { key: 'loadingPressure', label: 'Loading pressure', unit: 'bar', color: '#5b21b6', decimals: 0, group: 'HYDRAULIC', tagName: 'HYD.LOADING.PRESSURE' },
+  { key: 'bendingPressure', label: 'Bending pressure', unit: 'bar', color: '#7e22ce', decimals: 0, group: 'HYDRAULIC', tagName: 'HYD.BENDING.PRESSURE' },
+  { key: 'gapPosition', label: 'Capsule position', unit: 'mm', color: '#9333ea', decimals: 3, group: 'HYDRAULIC', tagName: 'HYD.GAP.POSITION' },
+  { key: 'lpPressure', label: 'LP system pressure', unit: 'bar', color: '#a855f7', decimals: 1, group: 'HYDRAULIC', tagName: 'LP.PRESSURE' },
+
+  // ── COIL / STRIP ─────────────────────────────────────────────────────────
+  { key: 'coilDiameter', label: 'Coil diameter', unit: 'mm', color: '#0369a1', decimals: 0, group: 'COIL / STRIP', tagName: 'COIL.DIAMETER' },
+  { key: 'coilRemaining', label: 'Remaining length', unit: 'm', color: '#0284c7', decimals: 0, group: 'COIL / STRIP', tagName: 'COIL.REMAINING_LENGTH' },
+  { key: 'passProgress', label: 'Pass progress', unit: '%', color: '#0891b2', decimals: 0, group: 'COIL / STRIP', tagName: 'PASS.PROGRESS' },
+
+  // ── SYSTEM ───────────────────────────────────────────────────────────────
+  { key: 'massFlowError', label: 'Mass flow closure', unit: '%', color: '#475569', decimals: 3, group: 'SYSTEM', tagName: 'MILL.MASSFLOW.ERROR' },
+  { key: 'updateRate', label: 'Feed update rate', unit: 'Hz', color: '#64748b', decimals: 1, group: 'SYSTEM', tagName: 'MILL.STATUS' },
 ]
 
 export const SIGNAL_BY_KEY: Record<TelemetrySignal, SignalDescriptor> = Object.fromEntries(
@@ -182,10 +169,15 @@ class TelemetryStore {
    * rate-limited to `telemetrySampleMs` so a 20 Hz feed does not fill the
    * buffers 5x faster than the windows expect.
    */
-  record(timestamp: number, values: Partial<Record<TelemetrySignal, number>>): void {
+  /**
+   * `null` is accepted and skipped, not coerced. A parameter with no tag on the
+   * active feed arrives here as null, and recording a zero for it would put a
+   * flat line on the chart for a value nobody is measuring (§7.4).
+   */
+  record(timestamp: number, values: Partial<Record<TelemetrySignal, number | null>>): void {
     if (timestamp - this.lastSampleMs < engineeringConfig.telemetrySampleMs) return
     this.lastSampleMs = timestamp
-    for (const [key, value] of Object.entries(values) as [TelemetrySignal, number][]) {
+    for (const [key, value] of Object.entries(values) as [TelemetrySignal, number | null][]) {
       if (value === undefined || value === null) continue
       this.series[key].write(timestamp, value)
     }

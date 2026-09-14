@@ -48,14 +48,14 @@ export function DirectionIndicator() {
       </div>
 
       <span
-        className={`num text-[12px] font-semibold tracking-[0.1em] ${
+        className={`num text-meta font-semibold tracking-[0.1em] ${
           reversing ? 'text-warning' : 'text-text'
         }`}
       >
         {forward ? 'FORWARD →' : '← REVERSE'}
       </span>
 
-      <span className="text-text-faint border-line border-l pl-2 text-[9px] tracking-wider">
+      <span className="text-text-faint border-line border-l pl-2 text-micro tracking-wider">
         {entryReelId(direction)} → {exitReelId(direction)}
       </span>
     </div>

@@ -1,0 +1,358 @@
+@*
+    The 3D viewport.
+
+    Blazor owns the canvas element, the label DOM and the overlay controls. It does NOT own the
+    frame path: the JS module opens its own WebSocket to the API and drives the scene at 60 fps
+    without a single interop call per frame. See wwwroot/js/twin/index.js and TwinFeed.cs.
+
+    PRERENDERING IS OFF on the page that hosts this. OnAfterRenderAsync would otherwise run
+    against a canvas that does not exist yet, and init would run twice.
+
+    Overlay parity with src/components/digitalTwin/TwinOverlay.tsx: status strip, simulation
+    command strip (disabled with reason on a replay feed — there is no solver to command),
+    camera presets, zoom, label/force toggles, expand view, trends link, equipment inspector.
+*@
+@using Crm04.Domain.Configuration
+@using Crm04.Domain.Machine
+@using Crm04.Domain.Types
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject IJSRuntime JS
+@inject IConfiguration Config
+@inject MillStore Mill
+@inject TagStore Tags
+@inject UiTickService Ticker
+@inject NavigationManager Nav
+@implements IAsyncDisposable
+
+<div class="twin-viewport border-line bg-base-950 relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border" @ref="_viewport">
+    <div class="border-line bg-base-900 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-3 py-2">
+        <span class="status-pill @StatusPill">@StatusLabel</span>
+        <span class="text-text-faint text-micro tracking-[0.08em]">DIRECTION</span>
+        <span class="text-meta font-semibold">@DirectionArrow @Direction</span>
+        <span class="text-text-faint text-micro num">@EndsLabel</span>
+
+        <span class="flex-1"></span>
+        <span class="text-prov-simulated text-micro font-semibold tracking-[0.08em]">SIMULATION CONTROL</span>
+        <button type="button" class="twin-cmd" disabled title="Replay feed — the mill follows the API, there is nothing to start."><Icon Name="Play" Size="13" /> START</button>
+        <button type="button" class="twin-cmd" disabled title="Replay feed — nothing to stop."><Icon Name="Square" Size="13" /> STOP</button>
+        <button type="button" class="twin-cmd twin-cmd-trip" disabled title="Replay feed — nothing to fast-stop.">FAST STOP</button>
+        <button type="button" class="twin-cmd" disabled title="Replay feed — nothing to reset."><Icon Name="RotateCcw" Size="13" /> RESET</button>
+    </div>
+
+    <div class="border-line bg-base-850 flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5">
+        <div class="segmented" role="group" aria-label="Camera view">
+            @foreach (var view in Views)
+            {
+                <button key="@view" type="button" aria-pressed="@(_view == view ? "true" : "false")" @onclick="() => SetView(view)">@view</button>
+            }
+        </div>
+        <button type="button" class="twin-tool" @onclick="ResetView" title="Return to the preset framing">RESET VIEW</button>
+        <button type="button" class="twin-tool" @onclick="() => Zoom(0.85)" title="Zoom in" aria-label="Zoom in"><Icon Name="Plus" Size="14" /></button>
+        <button type="button" class="twin-tool" @onclick="() => Zoom(1.18)" title="Zoom out" aria-label="Zoom out"><Icon Name="Minus" Size="14" /></button>
+        <button type="button" class="twin-tool @( _labels ? "twin-tool-on" : "")" aria-pressed="@(_labels ? "true" : "false")" @onclick="ToggleLabels">LABELS</button>
+        <button type="button" class="twin-tool @(_forceArrows ? "twin-tool-on" : "")" aria-pressed="@(_forceArrows ? "true" : "false")" @onclick="ToggleForce">FORCE VECTORS</button>
+
+        <span class="flex-1"></span>
+        <button type="button" class="twin-tool" @onclick="Expand" title="Fullscreen the 3D view">EXPAND VIEW</button>
+        <button type="button" class="twin-tool" @onclick='() => Nav.NavigateTo("/trends")' title="Open trends — the feed keeps running">
+            <Icon Name="TrendingUp" Size="13" /> TRENDS
+        </button>
+    </div>
+
+    @* The label DOM. Rendered by Blazor, POSITIONED by JavaScript.
+
+       These elements deliberately carry NO style attribute. Blazor's diff only patches
+       attributes it rendered, so the inline transform the projector sets survives every
+       re-render of the ValueReadout inside. Adding style="@something" here would silently
+       break the label positioning - it is the one rule this component must not lose. *@
+    <div class="twin-stage">
+        <canvas @ref="_canvas" class="twin-canvas" aria-label="Interactive rolling mill. Drag to orbit, scroll or pinch to zoom."></canvas>
+        <div class="twin-labels" @ref="_overlay">
+            <TwinLabels />
+        </div>
+
+        @if (_stalled is not null)
+        {
+            <div class="twin-stall" role="status">@_stalled</div>
+        }
+        @if (_error is not null)
+        {
+            <div class="twin-error" role="alert">
+                <strong>3D VIEW UNAVAILABLE</strong>
+                <span>@_error</span>
+                <button type="button" class="twin-tool" @onclick="Retry">RETRY</button>
+            </div>
+        }
+    </div>
+
+    <div class="border-line text-text-dim bg-base-900 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t px-3 py-1.5 text-micro">
+        <label class="inline-flex items-center gap-2">
+            <span class="font-semibold">Inspect equipment</span>
+            <select value="@_inspected" @onchange="OnInspect" aria-label="Choose equipment"
+                    class="border-line bg-base-950 min-h-8 rounded-md border px-2 text-meta">
+                <option value="">Choose equipment</option>
+                @foreach (var e in Equipment)
+                {
+                    <option key="@e.Id" value="@e.Id">@e.Label</option>
+                }
+            </select>
+        </label>
+        @if (_inspected is { Length: > 0 } sel && EquipmentById.TryGetValue(sel, out var eq))
+        {
+            <span class="text-text-dim truncate">@eq.Label:</span>
+            @* @key, NOT key. On an HTML element a stray `key` attribute is inert, but on a
+               COMPONENT Blazor binds attributes to parameters — and ValueReadout has no `key`
+               parameter, so it threw InvalidOperationException, took the whole circuit down with
+               it, and left every control on the page silently dead. *@
+            @foreach (var tag in eq.Tags)
+            {
+                <ValueReadout @key="tag" TagName="@tag" Size="sm" />
+            }
+        }
+        else if (_hovered is { Length: > 0 } hov && EquipmentById.TryGetValue(hov, out var heq))
+        {
+            <span class="text-text-faint truncate">Hover — @heq.Label:</span>
+            @foreach (var tag in heq.Tags)
+            {
+                @* Distinct from the selected-equipment keys above so the two branches never
+                   reuse each other's component instances. *@
+                var hoverKey = "h" + tag;
+                <ValueReadout @key="hoverKey" TagName="@tag" Size="sm" />
+            }
+        }
+        else
+        {
+            <span>Or click a part in the 3D view.</span>
+        }
+        <span class="ml-auto hidden xl:inline">Drag to orbit / Scroll or pinch to zoom · Strip section ×@MillConfig.Default.Visual.StripThicknessExaggeration / Roll gap ×@MillConfig.Default.Visual.RollGapExaggeration for legibility. Values are true.</span>
+    </div>
+</div>
+
+@code {
+    private static readonly string[] Views = ["LINE", "STAND", "ENTRY"];
+
+    private ElementReference _canvas;
+    private ElementReference _overlay;
+    private ElementReference _viewport;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<TwinCanvas>? _self;
+
+    private string _view = "LINE";
+    private bool _labels = true;
+    private bool _forceArrows = true;
+    private string? _error;
+    private string? _stalled;
+    private bool _initialised;
+    private string? _inspected;
+    private string? _hovered;
+
+    private sealed record EquipmentInfo(string Id, string Label, string[] Tags);
+
+    private static readonly EquipmentInfo[] Equipment =
+    [
+        new("MILL_STAND", "Mill stand", ["ROLL.FORCE.ACTUAL", "ROLL.GAP.ACTUAL"]),
+        new("WORK_ROLL_UPPER", "Work roll (upper)", ["WR.TOP.RPM"]),
+        new("WORK_ROLL_LOWER", "Work roll (lower)", ["WR.TOP.RPM"]),
+        new("BACKUP_ROLL_UPPER", "Backup roll (upper)", ["BUR.TOP.RPM"]),
+        new("STRIP", "Strip", ["STRIP.THICKNESS", "MILL.SPEED.ACTUAL"]),
+        new("DTR", "Delivery tension reel", ["DTR.TENSION", "DTR.DIAMETER"]),
+        new("ETR", "Entry tension reel", ["ETR.TENSION", "ETR.DIAMETER"]),
+        new("POR", "Payoff reel", ["POR.TENSION", "POR.DIAMETER"]),
+        new("GAUGE_ENTRY", "Entry gauge", ["GAUGE.ETR.THICKNESS"]),
+        new("GAUGE_EXIT", "Delivery gauge", ["GAUGE.DTR.THICKNESS"]),
+        new("FORCE", "Roll force", ["ROLL.FORCE.ACTUAL"]),
+        new("TENSION", "Strip tension", ["TENSION.ENTRY", "TENSION.EXIT"]),
+        new("CROP_SHEAR", "Crop shear", []),
+        new("PEELER", "Peeler unit", []),
+        new("FLATTENER", "Pinch roll flattener", []),
+        new("CARRY_OVER_TABLE", "Carry-over table", []),
+        new("SNUBBER", "POR snubber", []),
+        new("COIL_HANDLING", "Coil handling", []),
+        new("ENCLOSURE", "Mill enclosure", []),
+    ];
+
+    private static readonly Dictionary<string, EquipmentInfo> EquipmentById =
+        Equipment.ToDictionary(e => e.Id, StringComparer.Ordinal);
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    private MachineStatus Status => Mill.Summary?.MachineStatus ?? MachineStatus.Idle;
+    private string StatusLabel => MachineStatusRules.Label(Status);
+    private bool Forward => (Mill.Summary?.Direction ?? RollingDirection.Forward) == RollingDirection.Forward;
+    private string Direction => Forward ? "FORWARD" : "REVERSE";
+    private string DirectionArrow => Forward ? "→" : "←";
+    private string EndsLabel => Forward ? "ETR → DTR" : "DTR → ETR";
+
+    private string StatusPill => Status switch
+    {
+        MachineStatus.Rolling => "status-pill-normal text-healthy",
+        MachineStatus.FastStop or MachineStatus.Fault => "status-pill-trip text-trip alarm-pulse",
+        MachineStatus.Reversing or MachineStatus.Decelerating => "status-pill-warning text-warning",
+        _ => "status-pill-normal text-text-dim",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _initialised) return;
+
+        // Guard as well as the firstRender check: a circuit reconnect can re-enter here, and two
+        // renderers on one canvas means two rAF loops fighting and a leaked WebGL context.
+        _initialised = true;
+
+        await InitScene();
+    }
+
+    private async Task InitScene()
+    {
+        _error = null;
+        _stalled = null;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/twin/index.js");
+            _self ??= DotNetObjectReference.Create(this);
+
+            var apiBase = (Config["Api:BaseUrl"] ?? "http://localhost:5200/").TrimEnd('/');
+            var feedUrl = apiBase.Replace("https://", "wss://").Replace("http://", "ws://") + "/ws/twin";
+
+            await _module.InvokeVoidAsync("init", new
+            {
+                canvas = _canvas,
+                overlay = _overlay,
+                feedUrl,
+                configUrl = $"{apiBase}/api/config/mill",
+                dotNetRef = _self,
+            });
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            StateHasChanged();
+        }
+    }
+
+    private Task Retry() => InitScene();
+
+    /// <summary>Called from JS when a frame cannot start.</summary>
+    [JSInvokable]
+    public Task OnTwinError(string message)
+    {
+        _error = message;
+        _stalled = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Called from JS while the context is being recovered.</summary>
+    [JSInvokable]
+    public Task OnTwinStalled(string message)
+    {
+        _stalled = message;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Called from JS when recovery rebuilds the scene.</summary>
+    [JSInvokable]
+    public Task OnTwinRecovered()
+    {
+        _stalled = null;
+        _error = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Called from JS when a part is clicked in the scene.</summary>
+    [JSInvokable]
+    public Task OnEquipmentSelected(string groupName)
+    {
+        if (EquipmentById.ContainsKey(groupName)) _inspected = groupName;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Called from JS when the hover target changes (null when pointing at empty space).
+    /// Throttled to ~16 Hz on the JS side and change-only, so this never churns the circuit.
+    /// </summary>
+    [JSInvokable]
+    public Task OnEquipmentHovered(string? groupName)
+    {
+        var known = groupName is not null && EquipmentById.ContainsKey(groupName) ? groupName : null;
+        if (known == _hovered) return Task.CompletedTask;
+        _hovered = known;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SetView(string view)
+    {
+        _view = view;
+        if (_module is not null) await Safe(() => _module.InvokeVoidAsync("setCameraView", _canvas, view));
+    }
+
+    private async Task ResetView() => await SetView(_view);
+
+    private async Task Zoom(double factor)
+    {
+        if (_module is not null) await Safe(() => _module.InvokeVoidAsync("zoomTwin", _canvas, factor));
+    }
+
+    private async Task ToggleLabels()
+    {
+        _labels = !_labels;
+        if (_module is not null) await Safe(() => _module.InvokeVoidAsync("setLabelsVisible", _canvas, _labels));
+    }
+
+    private async Task ToggleForce()
+    {
+        _forceArrows = !_forceArrows;
+        if (_module is not null) await Safe(() => _module.InvokeVoidAsync("setForceArrowsVisible", _canvas, _forceArrows));
+    }
+
+    private async Task Expand()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("crm04TwinFullscreen", _viewport);
+        }
+        catch { /* fullscreen unavailable — the viewport still works inline */ }
+    }
+
+    private void OnInspect(ChangeEventArgs e) => _inspected = e.Value?.ToString();
+
+    /// <summary>
+    /// Teardown. THE MOST IMPORTANT METHOD IN THIS COMPONENT.
+    ///
+    /// Browsers allow roughly sixteen live WebGL contexts. Navigating away from this page without
+    /// disposing leaks one every time, and the twentieth visit gets a blank rectangle with no
+    /// error - the classic Blazor + three.js production failure.
+    ///
+    /// Every teardown call is wrapped: on a dropped circuit the JS runtime is already gone and
+    /// InvokeVoidAsync throws JSDisconnectedException, which must not prevent the rest of the
+    /// disposal from running.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        Ticker.Tick -= OnTick;
+        if (_module is not null)
+        {
+            await Safe(() => _module.InvokeVoidAsync("dispose", _canvas));
+            await Safe(() => _module.DisposeAsync());
+        }
+
+        _self?.Dispose();
+    }
+
+    private static async Task Safe(Func<ValueTask> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit went away first. Nothing to clean up on the far side, and throwing
+            // here would abort the rest of the teardown - which is how contexts leak.
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+}
