@@ -38,6 +38,16 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
+  <!--
+    OPC UA client for the plant feed (KEPServerEX). OPC Foundation's reference stack: the
+    Client package opens the session and subscriptions, Configuration manages the application
+    certificate that Kepware must trust.
+  -->
+  <ItemGroup Label="OPC UA">
+    <PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.176" />
+    <PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.176" />
+  </ItemGroup>
+
   <ItemGroup Label="Hosting and logging">
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />

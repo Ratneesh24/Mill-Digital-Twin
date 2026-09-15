@@ -3,6 +3,25 @@
 **Audience:** plant IT, the Oracle DBA and whoever owns KEPServerEX.
 **Goal:** connect the twin to real CRM04 plant data through Kepware and the company Oracle database.
 
+**This plant's endpoints (already configured in the code):**
+
+| | Value | Configured in |
+|---|---|---|
+| Kepware OPC UA | `opc.tcp://JLD2SRV19913:49320` | `Crm04.Feeder/appsettings.json` → `OpcUa:EndpointUrl` |
+| Kepware login / security | Anonymous, security policy **None** | `OpcUa:Username` = null, `OpcUa:UseSecurity` = false |
+| Kepware NodeId | Tag name = MillPilot address → `ns=2;s=<address>` | `OpcUa:NodeIdPrefix` = `ns=2;s=` |
+| Oracle | `132.147.244.24:1521/mill4db`, user `CRM04` | `Crm04.Feeder/appsettings.json` and `Crm04.Api/appsettings.json` → `ConnectionStrings:Crm04` |
+| Crm04.Api | `http://JLD2SRV19913:5200` | `Crm04.Web/appsettings.json` → `Api:HubUrl`, `Api:BaseUrl` |
+| Crm04.Web | `http://JLD2SRV19913:5240` | `Crm04.Api/appsettings.json` → `Cors:Origins` |
+
+**Status:** the Kepware OPC UA client is **implemented** and all settings above are in place. What
+remains on site is database setup (§3.4, run by IT), confirming the `REVIEW` rows in the tag mapping
+(§5), and installing the three services (§8).
+
+> ⚠ The Oracle password is currently written into both `appsettings.json` files, which are committed.
+> Keep the repository private, and before any shared deployment move it to the
+> `ConnectionStrings__Crm04` environment variable (which overrides the file) and remove it from the files.
+
 The delivered UI is the .NET / Blazor app under `dotnet/`. The React app under `src/` is a frozen
 reference — ignore it for integration.
 
@@ -14,7 +33,7 @@ reference — ignore it for integration.
  PLC / ABB MillPilot
         │
         ▼
- KEPServerEX  (OPC UA server, opc.tcp://<kepware-host>:49320)
+ KEPServerEX  (OPC UA server, opc.tcp://JLD2SRV19913:49320)
         │   OPC UA subscription, read-only
         ▼
  Crm04.Feeder  (Windows service)  ── the ONLY process that writes to Oracle
@@ -23,10 +42,10 @@ reference — ignore it for integration.
  Company Oracle  →  CRM04 schema  (FRAME, TAG_SAMPLE, CURRENT_TAG, TREND_SAMPLE, …)
         │
         ▼
- Crm04.Api  (http://<api-host>:5200)  ── reads Oracle, pushes over SignalR/WebSocket
+ Crm04.Api  (http://JLD2SRV19913:5200)  ── reads Oracle, pushes over SignalR/WebSocket
         │
         ▼
- Crm04.Web  (http://<web-host>:5240)  ── Blazor dashboard
+ Crm04.Web  (http://JLD2SRV19913:5240)  ── Blazor dashboard
         │
         ▼
  Operator browsers   (also open a WebSocket DIRECTLY to Crm04.Api for the 3D twin)
@@ -39,20 +58,20 @@ talks to Kepware, and only the Feeder writes to Oracle.
 
 ## 2. Checklist — what changes, where, who
 
-| # | Task | Where | Owner |
-|---|---|---|---|
-| 1 | Create the `CRM04` Oracle schema user and grant privileges | Oracle | DBA |
-| 2 | Set the Oracle connection string for **Feeder and API** | Environment variable `ConnectionStrings__Crm04` | IT |
-| 3 | Create the tables | `dotnet run --project src/Crm04.Feeder -- --apply-ddl` | IT / DBA |
-| 4 | Configure the Kepware OPC UA endpoint, user and certificate trust | KEPServerEX OPC UA Configuration Manager | Kepware owner |
-| 5 | Confirm the 28 `REVIEW` rows in the tag mapping | `dotnet/config/tag_mapping.csv` | Automation |
-| 6 | **Write the OPC UA connection code** (the only code change) | `dotnet/src/Crm04.Feeder/Sources/OpcUaFrameSource.cs` → `ConnectAsync` | Developer |
-| 7 | Add Kepware settings | `dotnet/src/Crm04.Feeder/appsettings.json` → `OpcUa` section | Developer |
-| 8 | Point Web at the API, and allow Web in the API's CORS list | `Crm04.Web/appsettings.json`, `Crm04.Api/appsettings.json` | IT |
-| 9 | Run all three in **Production** as services | Server | IT |
-| 10 | Verify end to end | §9 | IT + automation |
+| # | Task | Where | Owner | Status |
+|---|---|---|---|---|
+| 1 | `CRM04` Oracle schema user with privileges | Oracle | DBA | Confirm (§3.1) |
+| 2 | Oracle connection string for **Feeder and API** | Both `appsettings.json` | — | **Done** |
+| 3 | Create the tables | `--check-db`, then `--apply-ddl` (§3.4) | IT / DBA | **To do on site** |
+| 4 | Kepware endpoint allows anonymous + security None | KEPServerEX OPC UA Configuration Manager | Kepware owner | Confirm (§4) |
+| 5 | Confirm the `REVIEW` rows in the tag mapping | `dotnet/config/tag_mapping.csv` | Automation | **To do** |
+| 6 | OPC UA connection code | `Crm04.Feeder/Sources/OpcUaFrameSource.cs` | — | **Done** |
+| 7 | Kepware settings | `Crm04.Feeder/appsettings.json` → `OpcUa` | — | **Done** |
+| 8 | Web → API URLs, and CORS for Web | `Crm04.Web/appsettings.json`, `Crm04.Api/appsettings.json` | — | **Done** |
+| 9 | Run all three in **Production** as services on `JLD2SRV19913` | Server | IT | **To do** (§8) |
+| 10 | Verify end to end | §9 | IT + automation | **To do** |
 
-Nothing else in the codebase needs to change.
+No further code changes are needed.
 
 ---
 
@@ -90,22 +109,19 @@ Those four are exactly what the Feeder's `--check-db` verifies.
 Both **Crm04.Feeder** (writes) and **Crm04.Api** (reads) need it. It is read as
 `ConnectionStrings:Crm04`.
 
-> **Never put the password in `appsettings.json`.** It is in the code handed over, and it would end
-> up in source control.
-
-On the server, set a machine or service environment variable:
+It is **already set** in both `appsettings.json` files:
 
 ```text
-ConnectionStrings__Crm04 = User Id=CRM04;Password=<pw>;Data Source=//<db-host>:1521/<SERVICE_NAME>;
+User Id=CRM04;Password=CRM04@123;Data Source=132.147.244.24:1521/mill4db;
 ```
 
-For a developer machine, user-secrets instead:
-
-```bash
-cd dotnet
-dotnet user-secrets --project src/Crm04.Feeder set "ConnectionStrings:Crm04" "User Id=CRM04;Password=<pw>;Data Source=//<db-host>:1521/<SERVICE>;"
-dotnet user-secrets --project src/Crm04.Api    set "ConnectionStrings:Crm04" "User Id=CRM04;Password=<pw>;Data Source=//<db-host>:1521/<SERVICE>;"
-```
+> ⚠ Because those files are committed, the password travels with the code. The recommended
+> production setup is to delete it from both files and set a machine or service environment
+> variable instead — it overrides the file:
+>
+> ```text
+> ConnectionStrings__Crm04 = User Id=CRM04;Password=<pw>;Data Source=132.147.244.24:1521/mill4db;
+> ```
 
 ### 3.4 Check, then create the schema
 
@@ -126,17 +142,26 @@ dotnet run --project src/Crm04.Feeder -- --apply-ddl    # creates tables + index
 
 In **OPC UA Configuration Manager → Server Endpoints**:
 
-- Endpoint: `opc.tcp://<kepware-host>:49320` (Kepware's default port).
-- Security policy: **Basic256Sha256 — Sign and Encrypt**. Disable `None` for production.
-- Firewall: allow TCP 49320 from the Feeder host only.
+- Endpoint: `opc.tcp://JLD2SRV19913:49320` (Kepware's default port).
+- **This plant is configured for security policy `None` with anonymous login.** Kepware must
+  therefore have an endpoint with policy **None** enabled, and **Allow anonymous login** switched on
+  in Project Properties → OPC UA. With `None`, no certificate trust is needed (§4.3 does not apply).
+- Firewall: allow TCP 49320 from the Feeder host only. The Feeder is read-only (§4.2).
+- To harden later: enable **Basic256Sha256 — Sign and Encrypt**, create a read-only user, then set
+  `OpcUa:UseSecurity` = `true`, `OpcUa:Username`, and the `OpcUa__Password` environment variable,
+  and follow §4.3.
 
-### 4.2 User — read-only
+### 4.2 User — read-only (hardening; not used today)
+
+The plant currently uses anonymous login (§4.1). When hardening:
 
 - In Project Properties → OPC UA: **disable anonymous login**.
 - In **User Manager**, create a dedicated user (e.g. `crm04_twin`) with **read-only** access.
 - The twin never writes. Do not grant write permission, and configure no write nodes (§14.4).
 
 ### 4.3 Trust the Feeder's certificate
+
+**Only needed with `OpcUa:UseSecurity` = `true`** — not with the current security policy None.
 
 The Feeder creates its own client certificate the first time it connects (in its `pki/own` folder).
 The first connection attempt will be **rejected** until Kepware trusts it:
@@ -151,8 +176,14 @@ The mapping file lists each tag by its MillPilot path, e.g.
 `Applications.Mill.RollGap.RgcData.Ctrl.TrfAct`. In Kepware the OPC UA NodeId is
 `ns=2;s=<Channel>.<Device>.<tag path>`.
 
-**Recommended:** configure a channel and device, e.g. channel `CRM04`, device `MillPilot`, with tag
-groups mirroring the MillPilot path. Then every NodeId is simply:
+**This plant:** the Kepware tag names **are** the MillPilot addresses, so each NodeId is
+`ns=2;s=<address>` — e.g. `ns=2;s=Applications.Mill.RollGap.RgcData.Ctrl.TrfAct` — and
+`OpcUa:NodeIdPrefix` is set to `ns=2;s=`. If the namespace index turns out not to be 2, or Kepware
+nests the tags under a channel/device, change only that one setting. The Feeder logs every NodeId
+Kepware rejects, so a wrong prefix shows up immediately.
+
+The general case, for reference: with a channel and device (e.g. `CRM04` / `MillPilot`) and tag
+groups mirroring the MillPilot path, every NodeId would be:
 
 ```text
 ns=2;s=CRM04.MillPilot.Applications.Mill.RollGap.RgcData.Ctrl.TrfAct
@@ -208,8 +239,22 @@ same address twice for the same tag. It logs a warning with the count of `REVIEW
 
 ## 6. The code change — `OpcUaFrameSource.ConnectAsync` (developer)
 
-**This is the only code to write.** Everything else — mapping, unit conversion, the NO TAG rules,
-staleness, writing to Oracle — already works.
+> ✅ **Implemented.** `ConnectAsync` is written, the OPC UA packages are added and the settings are in
+> place; no developer action is required. What it does:
+>
+> - Connects on a background loop and retries every 5 s, so the Feeder never crashes when Kepware is
+>   down or restarting.
+> - Subscribes to every mapped address as `NodeIdPrefix + address`; **logs any NodeId Kepware
+>   rejects** (those tags read NO TAG).
+> - Bad quality → `null` (never zero, never the last good value).
+> - Widens Kepware `Word`/`DWord`/`Byte`/`LLong` values to numbers so they are not dropped.
+> - Uses the session keep-alive as the freshness heartbeat, because Kepware only publishes a value
+>   when it **changes** — otherwise an idle mill on a healthy link would wrongly go STALE.
+>
+> The sections below are kept as reference for anyone maintaining it.
+
+**This was the only code to write.** Everything else — mapping, unit conversion, the NO TAG rules,
+staleness, writing to Oracle — already worked.
 
 File: `dotnet/src/Crm04.Feeder/Sources/OpcUaFrameSource.cs`
 
@@ -222,22 +267,27 @@ which is private.
 `dotnet/Directory.Packages.props` pins all versions centrally:
 
 ```xml
-<PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="<latest 1.5.x>" />
+<PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.176" />
+<PackageVersion Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.176" />
 ```
 
 `dotnet/src/Crm04.Feeder/Crm04.Feeder.csproj` (no version — it comes from the file above):
 
 ```xml
 <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" />
+<PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" />
 ```
+
+Both are **already added**.
 
 ### 6.2 Add Kepware settings
 
-`OpcUaSourceOptions` (top of `OpcUaFrameSource.cs`) — add:
+`OpcUaSourceOptions` (top of `OpcUaFrameSource.cs`) — **already added**, plus `UseSecurity` and
+`AutoAcceptServerCertificate`:
 
 ```csharp
-public string EndpointUrl { get; set; } = "opc.tcp://localhost:49320";
-public string NodeIdPrefix { get; set; } = "ns=2;s=CRM04.MillPilot.";
+public string EndpointUrl { get; set; } = "opc.tcp://JLD2SRV19913:49320";
+public string NodeIdPrefix { get; set; } = "ns=2;s=";
 public string? Username { get; set; }
 public string? Password { get; set; }          // set via env var OpcUa__Password, never in the file
 public int PublishingIntervalMs { get; set; } = 100;
@@ -250,19 +300,29 @@ public int PublishingIntervalMs { get; set; } = 100;
   "MappingFile": null,
   "SourceId": "opcua:crm04",
   "StaleAfterMs": 2000,
-  "EndpointUrl": "opc.tcp://<kepware-host>:49320",
-  "NodeIdPrefix": "ns=2;s=CRM04.MillPilot.",
-  "Username": "crm04_twin",
-  "PublishingIntervalMs": 100
+  "EndpointUrl": "opc.tcp://JLD2SRV19913:49320",
+  "NodeIdPrefix": "ns=2;s=",
+  "Username": null,
+  "PublishingIntervalMs": 100,
+  "UseSecurity": false,
+  "AutoAcceptServerCertificate": false
 }
 ```
+
+This is exactly what is configured for the plant: anonymous login, security None, Kepware tag
+names equal to the MillPilot addresses.
 
 Password on the server: environment variable `OpcUa__Password`.
 
 ### 6.3 Implement `ConnectAsync`
 
-A starting template. OPC Foundation's API changes between versions — check signatures against the
-package version you install.
+> ⚠ **Historical template — do not copy it.** It was written against an older OPC Foundation API.
+> In the version actually used, **1.5.378.176**, most of these calls are obsolete and fail the build
+> (warnings are errors in this solution). The real implementation in `OpcUaFrameSource.cs` uses
+> `ValidateAsync`, `ApplicationInstance(config, telemetry)`, `CheckApplicationInstanceCertificatesAsync`,
+> `SelectEndpointAsync`, `DefaultSessionFactory(telemetry).CreateAsync`, a `byte[]` password, and
+> `Subscription` / `MonitoredItem` built from `SubscriptionOptions` / `MonitoredItemOptions`.
+> Read the file; this block only shows the overall shape.
 
 ```csharp
 // usings at the top of the file:
@@ -375,7 +435,7 @@ Already correct for production: `"Source": { "Kind": "Oracle" }`. Only add the W
 CORS:
 
 ```json
-"Cors": { "Origins": [ "http://<web-host>:5240" ] }
+"Cors": { "Origins": [ "http://JLD2SRV19913:5240" ] }
 ```
 
 Connection string: the same `ConnectionStrings__Crm04` environment variable as the Feeder (§3.3).
@@ -384,13 +444,13 @@ Connection string: the same `ConnectionStrings__Crm04` environment variable as t
 
 ```json
 "Api": {
-  "HubUrl":  "http://<api-host>:5200/hubs/telemetry",
-  "BaseUrl": "http://<api-host>:5200/"
+  "HubUrl":  "http://JLD2SRV19913:5200/hubs/telemetry",
+  "BaseUrl": "http://JLD2SRV19913:5200/"
 }
 ```
 
 > **`BaseUrl` must be reachable from the operators' PCs, not just from the Web server.** The 3D twin
-> opens a WebSocket from the **browser** straight to `ws://<api-host>:5200/ws/twin`. If `BaseUrl` is
+> opens a WebSocket from the **browser** straight to `ws://JLD2SRV19913:5200/ws/twin`. If `BaseUrl` is
 > `localhost`, the dashboard works but the 3D page cannot connect.
 
 ---
@@ -442,13 +502,13 @@ Run each as a Windows service (`sc create`, NSSM, or IIS for Api/Web). Copy
    `Plant feed connected` → `… frames written. Write p50 … ms`.
 2. **Oracle:** `SELECT COUNT(*), MAX(TS_UTC), MAX(OP_MODE) FROM FRAME;` — count grows ~10/s and
    `OP_MODE` is **`LIVE`**.
-3. **API:** `http://<api-host>:5200/api/diagnostics/feed` → `Running: true`, `Stale: false`,
+3. **API:** `http://JLD2SRV19913:5200/api/diagnostics/feed` → `Running: true`, `Stale: false`,
    publish rate ≈ 10 Hz.
 4. **Dashboard:** header chip **MODEL / DATA · HEALTHY**; values badged **LIVE / CALC / REF / EST /
    NO TAG**, and **never SIM**.
 5. **Automated check** from a PC with Chrome/Edge:
    ```bash
-   SMOKE_URL=http://<web-host>:5240/ SMOKE_EXPECT=live npm run check:smoke
+   SMOKE_URL=http://JLD2SRV19913:5240/ SMOKE_EXPECT=live npm run check:smoke
    ```
    Fails if any value is badged SIM.
 6. **Pull the Kepware cable (or stop the channel):** within ~3 s the UI goes **STALE**, the 3D twin

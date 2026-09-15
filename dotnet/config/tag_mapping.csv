@@ -52,7 +52,7 @@ Applications.MillPilotDrives.Drives.TensionReel2.CoiDm.CoiDmLogic.SetDiaP,,mm,,1
 Applications.MillPilotDrives.Drives.Tr2ToPil.StripLength,DTR.LENGTH,m,m,1,0,NUMBER,OK,
 Applications.MillPilotDrives.Drives.Tr2ToPil.Layer,,,,1,0,NUMBER,NEW,"Twin has POR.LAYERS only; add DTR.LAYERS to carry this"
 Applications.MillPilotDrives.Tr2ToPil.Diameter,DTR.DIAMETER,mm,mm,1,0,NUMBER,OK,
-Applications.MillPilotDrives.Drives.TensionReel2.Coi.Drv.FromDrv.TorqRef2Perc,DTR.TORQUE,%,kNm,1,0,NUMBER,REVIEW,"PERCENT of drive rating; Scale must become ratedTorque/100 once automation confirms the base"
+Applications.MillPilotDrives.Drives.TensionReel2.Coi.Drv.FromDrv.TorqRef2Perc,DTR.TORQUE,%,kNm,0.47,0,NUMBER,REVIEW,"PERCENT of rating x 47 kNm reel rated torque (MillConfig, derived 500 kW / 438 rpm x 4.3333). Confirm the rating AND that TorqRef2Perc is actual torque - the name reads like a reference"
 Applications.MillPilotDrives.Drives.TensionReel2.Coi.Drv.FromDrv.MotCurrent,DTR.CURRENT,A,A,1,0,NUMBER,OK,
 Applications.MillPilotDrives.Drives.DriveCtrlA100.PrrToPil.ThicknExit,DTR.THICKNESS,mm,mm,1,0,NUMBER,REVIEW,"Same address as STRIP.THICKNESS; duplicate ingestion is intentional only if both should track it"
 #
@@ -82,7 +82,7 @@ Applications.Mill.RollGap.RgcData.Ctrl.TrfAct,ROLL.FORCE.ACTUAL,T,t,1,0,NUMBER,O
 Applications.Mill.RollGap.RollGapControl.RgcPos.RgcPos2A100.PosActIn,ROLL.GAP.ACTUAL,mm,mm,1,0,NUMBER,OK,"Promotes roll gap from CALCULATED; removes the gaugemeter-inverse dependency"
 Applications.MillPilotDrives.IODdata.VrefMill,MILL.SPEED.REF,mpm,m/min,1,0,NUMBER,OK,
 Applications.MillPilotDrives.PrrToPil.VRefOperation,MILL.SPEED.ACTUAL,mpm,m/min,1,0,NUMBER,REVIEW,"Named VRef which reads as a reference not an actual; confirm it is measured speed"
-Applications.MillPilotDrives.Drives.Mill.Drv.FromDrv.TorqRef2Perc,DRIVE.TORQUE,%,kNm,1,0,NUMBER,REVIEW,"PERCENT of rating; Scale must become ratedTorque/100"
+Applications.MillPilotDrives.Drives.Mill.Drv.FromDrv.TorqRef2Perc,DRIVE.TORQUE,%,kNm,0.205,0,NUMBER,REVIEW,"PERCENT of rating x 20.5 kNm main drive rated torque (MillConfig). Confirm the rating AND that TorqRef2Perc is actual torque - the name reads like a reference"
 Applications.MillPilotDrives.Drives.Milldrive.FromDrive.Drv.FromDrv.MotCurrent,DRIVE.CURRENT,A,A,1,0,NUMBER,OK,
 Applications.Mill.RollGap.RgcData.Pos.Tlt.Act,ROLL.GAP.TILT,um,um,1,0,NUMBER,OK,
 Applications.Mill.RollGap.RgcData.Ctrl.DrfAct,ROLL.FORCE.DIFF_REF,T,t,1,0,NUMBER,REVIEW,"Plant value is the ACTUAL differential force; twin tag is a REFERENCE. Semantics differ"
@@ -112,7 +112,7 @@ Applications.MillPilotDrives.Drives.TensionReel1.CoiDm.CoiDmLogic.SetDiaP,,mm,,1
 Applications.MillPilotDrives.Tr1ToPil.StripLength,ETR.LENGTH,m,m,1,0,NUMBER,OK,
 Applications.MillPilotDrives.Tr1ToPil.Layer,,,,1,0,NUMBER,NEW,"Add ETR.LAYERS to carry this"
 Applications.MillPilotDrives.Tr1ToPil.Diameter,ETR.DIAMETER,mm,mm,1,0,NUMBER,OK,
-Applications.MillPilotDrives.Drives.TensionReel1.Coi.Drv.FromDrv.TorqRef2Perc,ETR.TORQUE,%,kNm,1,0,NUMBER,REVIEW,"PERCENT of rating; needs the rated-torque base"
+Applications.MillPilotDrives.Drives.TensionReel1.Coi.Drv.FromDrv.TorqRef2Perc,ETR.TORQUE,%,kNm,0.47,0,NUMBER,REVIEW,"PERCENT of rating x 47 kNm reel rated torque (MillConfig). Confirm the rating AND that TorqRef2Perc is actual torque"
 Applications.MillPilotDrives.Tr1ToPil.MotCurrent,ETR.CURRENT,A,A,1,0,NUMBER,OK,
 Applications.MillPilotDrives.Drives.DriveCtrlA100.PrrToPil.ThicknEntry,ETR.THICKNESS,mm,mm,1,0,NUMBER,REVIEW,"Same address as STRIP.THICKNESS.ENTRY"
 #
@@ -123,7 +123,7 @@ Applications.MillPilotDrives.Drives.PayOffReel.CoiDm.CoiDmLogic.SetDiaP,,mm,,1,0
 Applications.MillPilotDrives.PorToPil.StripLength,POR.LENGTH,m,m,1,0,NUMBER,OK,
 Applications.MillPilotDrives.PorToPil.Layer,POR.LAYERS,,,1,0,NUMBER,OK,
 Applications.MillPilotDrives.PorToPil.Diameter,POR.DIAMETER,mm,mm,1,0,NUMBER,OK,
-Applications.MillPilotDrives.Drives.PorToPil.TorqRef2Perc,POR.TORQUE,%,kNm,1,0,NUMBER,REVIEW,"PERCENT of rating; needs the rated-torque base"
+Applications.MillPilotDrives.Drives.PorToPil.TorqRef2Perc,POR.TORQUE,%,kNm,0.47,0,NUMBER,REVIEW,"PERCENT of rating x 47 kNm reel rated torque (MillConfig). Confirm the rating AND that TorqRef2Perc is actual torque"
 Applications.MillPilotDrives.Drives.PorToPil.MotCurrent,POR.CURRENT,A,A,1,0,NUMBER,OK,
 #
 # --------------------------------------------------------- Media system health

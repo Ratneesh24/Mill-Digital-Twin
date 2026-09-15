@@ -2,6 +2,9 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using Crm04.Domain.Tags;
 using Crm04.Domain.Types;
+using Ua = Opc.Ua;
+using UaClient = Opc.Ua.Client;
+using UaConfig = Opc.Ua.Configuration;
 
 namespace Crm04.Feeder.Sources;
 
@@ -18,28 +21,47 @@ public sealed class OpcUaSourceOptions
     /// see the comment on <see cref="OpcUaFrameSource.NextFrameAsync"/>.
     /// </summary>
     public int StaleAfterMs { get; set; } = 2000;
+
+    /// <summary>KEPServerEX OPC UA endpoint, e.g. opc.tcp://JLD2SRV19913:49320.</summary>
+    public string EndpointUrl { get; set; } = "opc.tcp://JLD2SRV19913:49320";
+
+    /// <summary>
+    /// Prepended to each PlantAddress in the mapping file to form the OPC UA NodeId. Confirm the
+    /// channel/device names and the namespace index in UaExpert before trusting it.
+    /// </summary>
+    public string NodeIdPrefix { get; set; } = "ns=2;s=";
+
+    /// <summary>Read-only Kepware OPC UA user; null for anonymous (not recommended in production).</summary>
+    public string? Username { get; set; }
+
+    /// <summary>Set via the OpcUa__Password environment variable - never in a committed file.</summary>
+    public string? Password { get; set; }
+
+    public int PublishingIntervalMs { get; set; } = 100;
+
+    /// <summary>
+    /// Use a signed and encrypted endpoint (Basic256Sha256) rather than security policy None.
+    /// Requires the Feeder's certificate to be trusted in Kepware, and Kepware's in pki/trusted.
+    /// </summary>
+    public bool UseSecurity { get; set; }
+
+    /// <summary>
+    /// Accept Kepware's server certificate without it being in pki/trusted. Convenient while
+    /// commissioning; switch off once the certificate has been trusted explicitly.
+    /// </summary>
+    public bool AutoAcceptServerCertificate { get; set; }
 }
 
 /// <summary>
-/// THE LIVE PLANT SEAM — a scaffold, deliberately not finished.
+/// THE LIVE PLANT FEED — KEPServerEX over OPC UA.
 ///
-/// Everything here is transport-agnostic and compiles with no extra packages: mapping, unit
-/// conversion, the absent-vs-null rule and the staleness gate. The ONE thing left is moving
-/// bytes, which is <see cref="ConnectAsync"/>. Fill that in with either
+/// Opens an OPC UA session to Kepware (OpcUa:EndpointUrl), subscribes to every address in the
+/// mapping file as OpcUa:NodeIdPrefix + address, and turns each notification into a twin tag
+/// through <see cref="Ingest"/> - mapping, unit conversion, the absent-vs-null rule and the
+/// staleness gate all live here.
 ///
-///   a) an OPC UA client in this process (add OPCFoundation.NetStandard.Opc.Ua.Client), or
-///   b) a WebSocket/MQTT reader consuming an edge gateway's egress — the path
-///      docs/INTEGRATION.md describes, and usually the one plant IT will accept.
-///
-/// Whichever you pick, call <see cref="Ingest"/> from the subscription callback. Nothing else
-/// changes.
-///
-/// NOT REGISTERED IN DI ON PURPOSE. Adding this file changes no behaviour; the Feeder keeps
-/// replaying until someone deliberately swaps the registration in Program.cs:
-///
-///     builder.Services.AddSingleton&lt;IFrameSource, OpcUaFrameSource&gt;();
-///
-/// and binds an "OpcUa" section the way "Replay" is bound.
+/// Registered by Program.cs when Source:Kind is OpcUa, which is the production setting. The
+/// plant's configuration is documented in docs/IT_INTEGRATION_GUIDE.md.
 ///
 /// THE THREE RULES THIS CLASS EXISTS TO ENFORCE
 ///
@@ -106,8 +128,8 @@ public class OpcUaFrameSource : IFrameSource
     }
 
     /// <summary>
-    /// Open the plant connection and subscribe. Override this — the default deliberately does
-    /// nothing except say so.
+    /// Open the Kepware session and subscribe to every mapped address, on a background loop that
+    /// keeps retrying for as long as the Feeder runs.
     ///
     /// It does NOT throw. A feeder that crashes on a gateway that is not ready yet is worse than
     /// one that sits quiet and writes nothing: with no frames the API's frame age grows, the UI
@@ -116,11 +138,226 @@ public class OpcUaFrameSource : IFrameSource
     /// </summary>
     protected virtual Task ConnectAsync(CancellationToken ct)
     {
-        _log.LogError(
-            "OpcUaFrameSource.ConnectAsync is not implemented — no plant transport is wired, so no " +
-            "frames will be produced. Override it with an OPC UA client or a gateway reader and " +
-            "call Ingest() from the subscription callback.");
+        _connectionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var token = _connectionCts.Token;
+        _ = Task.Run(() => ConnectLoopAsync(token), CancellationToken.None);
         return Task.CompletedTask;
+    }
+
+    // OPC Foundation 1.5.378 routes its diagnostics through a telemetry context that every session,
+    // subscription and monitored item is constructed with. One for the process is enough.
+    private static readonly Ua.ITelemetryContext Telemetry = Ua.DefaultTelemetry.Create(_ => { });
+
+    private UaClient.ISession? _session;
+    private CancellationTokenSource? _connectionCts;
+    private TaskCompletionSource _linkLost = NewSignal();
+
+    private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// Connect, hold the session until keep-alive reports the link gone, then start again. A
+    /// Kepware restart, a network blip or a server that is not up yet all end up here, and none
+    /// of them stops the Feeder.
+    /// </summary>
+    private async Task ConnectLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await ConnectOnceAsync(ct);
+                await _linkLost.Task.WaitAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                MarkDisconnected(ex.Message);
+                _log.LogError(ex, "Could not connect to Kepware at {Endpoint}; retrying in 5 s.", _options.EndpointUrl);
+            }
+
+            await CloseSessionAsync();
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+
+        await CloseSessionAsync();
+    }
+
+    private async Task ConnectOnceAsync(CancellationToken ct)
+    {
+        var pki = Path.Combine(AppContext.BaseDirectory, "pki");
+
+        var config = new Ua.ApplicationConfiguration
+        {
+            ApplicationName = "CRM04 Feeder",
+            ApplicationUri = $"urn:{System.Net.Dns.GetHostName()}:CRM04Feeder",
+            ApplicationType = Ua.ApplicationType.Client,
+            SecurityConfiguration = new Ua.SecurityConfiguration
+            {
+                ApplicationCertificate = new Ua.CertificateIdentifier
+                {
+                    StoreType = Ua.CertificateStoreType.Directory,
+                    StorePath = Path.Combine(pki, "own"),
+                    SubjectName = "CN=CRM04 Feeder",
+                },
+                TrustedPeerCertificates = new Ua.CertificateTrustList
+                {
+                    StoreType = Ua.CertificateStoreType.Directory,
+                    StorePath = Path.Combine(pki, "trusted"),
+                },
+                TrustedIssuerCertificates = new Ua.CertificateTrustList
+                {
+                    StoreType = Ua.CertificateStoreType.Directory,
+                    StorePath = Path.Combine(pki, "issuer"),
+                },
+                RejectedCertificateStore = new Ua.CertificateTrustList
+                {
+                    StoreType = Ua.CertificateStoreType.Directory,
+                    StorePath = Path.Combine(pki, "rejected"),
+                },
+                AutoAcceptUntrustedCertificates = _options.AutoAcceptServerCertificate,
+            },
+            TransportConfigurations = [],
+            TransportQuotas = new Ua.TransportQuotas { OperationTimeout = 15000 },
+            ClientConfiguration = new Ua.ClientConfiguration { DefaultSessionTimeout = 60000 },
+        };
+
+        await config.ValidateAsync(Ua.ApplicationType.Client, ct);
+
+        if (_options.AutoAcceptServerCertificate)
+        {
+            config.CertificateValidator.CertificateValidation += (_, e) => e.Accept = true;
+        }
+
+        // Creates pki/own on first run - that is the certificate Kepware must be told to trust.
+        var app = new UaConfig.ApplicationInstance(config, Telemetry);
+        await app.CheckApplicationInstanceCertificatesAsync(false, null, ct);
+
+        var description = await UaClient.CoreClientUtils.SelectEndpointAsync(
+            config, _options.EndpointUrl, _options.UseSecurity, 15000, Telemetry, ct);
+        var endpoint = new Ua.ConfiguredEndpoint(null, description, Ua.EndpointConfiguration.Create(config));
+
+        var identity = string.IsNullOrWhiteSpace(_options.Username)
+            ? new Ua.UserIdentity(new Ua.AnonymousIdentityToken())
+            : new Ua.UserIdentity(_options.Username, System.Text.Encoding.UTF8.GetBytes(_options.Password ?? string.Empty));
+
+        var session = await new UaClient.DefaultSessionFactory(Telemetry).CreateAsync(
+            config, endpoint, false, "CRM04 Feeder", 60000, identity, null, ct);
+        _session = session;
+
+        var lost = NewSignal();
+        _linkLost = lost;
+
+        // KEEP-ALIVE IS THE HEARTBEAT, NOT JUST A LINK CHECK. Kepware publishes a value only when it
+        // CHANGES, so an idle mill on a perfectly healthy link sends nothing at all - and "no value for
+        // StaleAfterMs" would then report a live feed as STALE. A good keep-alive proves the server is
+        // answering, so it refreshes the freshness clock; values that have not changed are still current.
+        session.KeepAliveInterval = Math.Max(500, Math.Min(1000, _options.StaleAfterMs / 2));
+        session.KeepAlive += (_, e) =>
+        {
+            if (Ua.ServiceResult.IsBad(e.Status))
+            {
+                MarkDisconnected($"keep-alive failed: {e.Status}");
+                lost.TrySetResult();
+                return;
+            }
+
+            Interlocked.Exchange(ref _lastUpdateMs, NowMs());
+        };
+
+        var subscription = new UaClient.Subscription(Telemetry, new UaClient.SubscriptionOptions
+        {
+            DisplayName = "CRM04 twin",
+            PublishingInterval = _options.PublishingIntervalMs,
+            PublishingEnabled = true,
+        });
+
+        var items = new List<UaClient.MonitoredItem>(_byAddress.Count);
+        foreach (var address in _byAddress.Keys)
+        {
+            var item = new UaClient.MonitoredItem(Telemetry, new UaClient.MonitoredItemOptions
+            {
+                // The address rides along as the display name, so the notification handler can hand
+                // it straight to Ingest() without a second lookup table.
+                DisplayName = address,
+                StartNodeId = Ua.NodeId.Parse(_options.NodeIdPrefix + address),
+                AttributeId = Ua.Attributes.Value,
+                SamplingInterval = _options.PublishingIntervalMs,
+                QueueSize = 1,
+                DiscardOldest = true,
+            });
+            item.Notification += OnNotification;
+            items.Add(item);
+        }
+
+        subscription.AddItems(items);
+        session.AddSubscription(subscription);
+        await subscription.CreateAsync(ct);
+
+        // An address Kepware does not know is not fatal - that tag simply reads NO TAG - but
+        // automation needs the list, because it is almost always a NodeId prefix or naming mismatch.
+        var rejected = items
+            .Where(i => i.Status.Error is not null && Ua.ServiceResult.IsBad(i.Status.Error))
+            .Select(i => i.DisplayName)
+            .ToList();
+
+        if (rejected.Count > 0)
+        {
+            _log.LogWarning(
+                "Kepware rejected {Count} of {Total} NodeId(s) under prefix '{Prefix}'. These tags will read NO TAG. First few: {Addresses}",
+                rejected.Count, items.Count, _options.NodeIdPrefix, string.Join(", ", rejected.Take(10)));
+        }
+
+        MarkConnected();
+    }
+
+    private void OnNotification(UaClient.MonitoredItem item, UaClient.MonitoredItemNotificationEventArgs e)
+    {
+        if (e.NotificationValue is not Ua.MonitoredItemNotification notification) return;
+
+        var value = notification.Value;
+
+        // Bad or uncertain quality means the tag exists but reads nothing: pass null, which becomes
+        // TagValue.Null. Never substitute zero, and never hold the last good value.
+        Ingest(item.DisplayName, Ua.StatusCode.IsGood(value.StatusCode) ? Normalise(value.Value) : null);
+    }
+
+    /// <summary>
+    /// Kepware delivers Word / DWord / Byte / LLong tags as ushort / uint / byte / ulong, which the
+    /// converter does not recognise and would turn into NO DATA. Widen every other number to double.
+    /// </summary>
+    private static object? Normalise(object? value) => value switch
+    {
+        null or bool or string or double or float or int or long or short or decimal => value,
+        IConvertible c => System.Convert.ToDouble(c, CultureInfo.InvariantCulture),
+        _ => value.ToString(),
+    };
+
+    private async Task CloseSessionAsync()
+    {
+        var session = Interlocked.Exchange(ref _session, null);
+        if (session is null) return;
+
+        try
+        {
+            await session.CloseAsync(5000, true, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "Closing the Kepware session failed; disposing anyway.");
+        }
+
+        session.Dispose();
     }
 
     /// <summary>Call from the transport once the session is up and subscriptions are live.</summary>
@@ -375,10 +612,18 @@ public class OpcUaFrameSource : IFrameSource
         return Path.Combine(dir?.FullName ?? ".", "config", "tag_mapping.csv");
     }
 
-    public virtual ValueTask DisposeAsync()
+    public virtual async ValueTask DisposeAsync()
     {
+        if (_connectionCts is not null)
+        {
+            await _connectionCts.CancelAsync();
+            _connectionCts.Dispose();
+            _connectionCts = null;
+        }
+
+        await CloseSessionAsync();
         _connected = false;
         _latest.Clear();
-        return ValueTask.CompletedTask;
+        GC.SuppressFinalize(this);
     }
 }
