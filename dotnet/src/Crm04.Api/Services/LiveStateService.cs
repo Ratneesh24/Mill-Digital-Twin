@@ -1,3 +1,4 @@
+using Crm04.Api.Sources;
 using Crm04.Contracts;
 using Crm04.Domain.Machine;
 using Crm04.Domain.Projection;
@@ -28,11 +29,24 @@ public sealed class LiveStateService
     private readonly Queue<long> _arrivals = new();
     private const int RateWindow = 20;
 
-    private MachineState _state = MachineStateProjector.Empty(OperatingMode.Simulation);
-    private TagFrame _tags = TagFrame.Empty(OperatingMode.Simulation);
+    private MachineState _state;
+    private TagFrame _tags;
     private InterlockChain _interlocks = InterlockChain.Empty;
     private IReadOnlyList<AlarmCondition> _alarms = [];
     private CommState _comm = CommState.Disconnected;
+
+    /// <summary>
+    /// The pre-first-frame state takes the mode the configured source declares, rather than a
+    /// literal. It used to be hardcoded to Simulation, so on a plant feed every surface that reads
+    /// state before the first frame lands claimed simulated provenance for a mill no simulator was
+    /// driving. This is not a claim of LIVE either: it is whatever the source says, before it has
+    /// said anything else.
+    /// </summary>
+    public LiveStateService(IFrameSource source)
+    {
+        _state = MachineStateProjector.Empty(source.Mode);
+        _tags = TagFrame.Empty(source.Mode);
+    }
 
     public long FramesReceived { get; private set; }
 

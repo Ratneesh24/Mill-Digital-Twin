@@ -1,0 +1,172 @@
+# CRM04 PLANT TAG MAPPING - plant (ABB MillPilot) address -> twin tag.
+#
+# THIS FILE IS THE CONTRACT between the mill's OPC-UA address space and the twin's
+# tag catalogue. It is data, not code, so automation can review and correct it
+# without a .NET toolchain.
+#
+# Columns
+#   PlantAddress  MillPilot application path exactly as the gateway exposes it.
+#   TwinTag       Tag name in the twin catalogue (see dotnet/db/seed/tag_definitions.sql).
+#                 LEAVE EMPTY to ingest nothing - the tag is then ABSENT from the frame,
+#                 which renders as NO TAG. That is the honest outcome and is never the
+#                 same as a value of zero (see Sec 7.4).
+#   PlantUnit     Unit on the plant side.
+#   TwinUnit      Unit the catalogue declares.
+#   Scale/Offset  twin = plant * Scale + Offset. Applied to NUMBER rows only.
+#   Kind          NUMBER | BOOLEAN | STRING. Decides which TagValue factory is used.
+#   Confidence    OK      mapping is unambiguous
+#                 REVIEW  mapped, but CONFIRM WITH AUTOMATION before trusting it
+#                 NEW     no twin tag exists yet; ignored until one is added
+#   Notes         why, for anything not obvious.
+#
+# HOW TO USE: confirm every REVIEW row with mill automation, fill in the blanks the
+# NEW rows need, and only then change liveAvailability in src/data/tagDefinitions.ts.
+#
+PlantAddress,TwinTag,PlantUnit,TwinUnit,Scale,Offset,Kind,Confidence,Notes
+#
+# ---------------------------------------------------------------- Coil details
+Applications.MillPilotDrives.Presetting.ActSched.PrrCoil.Coi.CoilID,COIL.ID,,,1,0,STRING,OK,
+# DUPLICATE ADDRESS - deliberately inactive. Your sheet lists IODdata.VrefMill twice, as
+# "Mill Speed" here and as "Speed Reference" in the Mill Stand block. One address cannot be
+# two tags, so the Mill Stand row is the active one and this row is kept only to record that
+# the sheet named it twice. If "Mill Speed" was meant to be the ACTUAL speed, the Mill Stand
+# mapping is what needs changing - not this row.
+#Applications.MillPilotDrives.IODdata.VrefMill,MILL.SPEED.REF,mpm,m/min,1,0,NUMBER,REVIEW,"Duplicate of the Mill Stand row"
+Applications.MillPilotDrives.PrrToPil.StripWidth,STRIP.WIDTH,mm,mm,1,0,NUMBER,OK,
+# DUPLICATE ADDRESS - deliberately inactive. Your sheet labels DriveCtrlA100.PorTenAct
+# "Entry Tension" here, but the same address appears again under POR Parameters. It is the
+# PAYOFF reel's tension either way, so the POR row below is the active one.
+# WORTH RAISING WITH AUTOMATION: if the sheet means this genuinely IS the mill's entry
+# tension, then on a normal pass the entry reel is ETR, not POR, and TENSION.ENTRY currently
+# has no mapping at all.
+#Applications.MillPilotDrives.Drives.DriveCtrlA100.PorTenAct,POR.TENSION,kg,kN,0.00980665,0,NUMBER,REVIEW,"Duplicate of the POR Parameters row"
+Applications.MillPilotDrives.Drives.DriveCtrlA100.Tr2TenAct,DTR.TENSION,kg,kN,0.00980665,0,NUMBER,REVIEW,"Tr2 assumed = DTR; see the DTR/ETR inversion note at the foot of this file"
+Applications.MillPilotDrives.Drives.DriveCtrlA100.PrrToPil.ThicknEntry,STRIP.THICKNESS.ENTRY,mm,mm,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Drives.DriveCtrlA100.PrrToPil.ThicknExit,STRIP.THICKNESS,mm,mm,1,0,NUMBER,OK,
+Applications.MillPilotDrives.PrrToPil.NrOfPasses,PASS.TOTAL,,,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Tr2ToPil.StripLength,COIL.LENGTH,m,m,1,0,NUMBER,REVIEW,"Recoiler coil length; also mapped to DTR.LENGTH below - confirm which the twin should show"
+#
+# ------------------------------------------------------------- DTR parameters
+Applications.MillPilotDrives.Tr2ToPil.TensionOn,DTR.STATUS,,,1,0,BOOLEAN,REVIEW,"Boolean on/off feeding a status word the twin expects as a string"
+Applications.MillPilotDrives.Drives.TensionReel2.CoiDm.CoiDmLogic.SetDiaP,,mm,,1,0,NUMBER,NEW,"Diameter SETPOINT; twin only carries DTR.DIAMETER (actual)"
+Applications.MillPilotDrives.Drives.Tr2ToPil.StripLength,DTR.LENGTH,m,m,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Drives.Tr2ToPil.Layer,,,,1,0,NUMBER,NEW,"Twin has POR.LAYERS only; add DTR.LAYERS to carry this"
+Applications.MillPilotDrives.Tr2ToPil.Diameter,DTR.DIAMETER,mm,mm,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Drives.TensionReel2.Coi.Drv.FromDrv.TorqRef2Perc,DTR.TORQUE,%,kNm,1,0,NUMBER,REVIEW,"PERCENT of drive rating; Scale must become ratedTorque/100 once automation confirms the base"
+Applications.MillPilotDrives.Drives.TensionReel2.Coi.Drv.FromDrv.MotCurrent,DTR.CURRENT,A,A,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Drives.DriveCtrlA100.PrrToPil.ThicknExit,DTR.THICKNESS,mm,mm,1,0,NUMBER,REVIEW,"Same address as STRIP.THICKNESS; duplicate ingestion is intentional only if both should track it"
+#
+# --------------------------------------------------------- Mill control status
+Applications.Mill.RollGap.RollGapControl.RgcData.Ctrl.On,AGC.STATUS,,,1,0,BOOLEAN,REVIEW,"RGC = roll gap control; may not be the same thing the twin calls AGC"
+Applications.Mill.RollGap.RollGapControl.RgcData.Trf.On,TRF.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.RollGap.RgcData.Pos.On,POSITION.MODE.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.MM1.BurBalOnAck,,,,1,0,BOOLEAN,NEW,"Backup roll balance on; no twin tag"
+Applications.Mill.RollGap.WorkRollBending.RbcCtrl.Rbc.CtrlOn,BENDING.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.RgcToPilBit.RollgapClosed,ROLLGAP.CLOSED.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.RollGap.RgcData.Ctrl.Collapsed,,,,1,0,BOOLEAN,NEW,"Rollgap collapsed; no twin tag"
+#
+# ---------------------------------------------------------------- AGC controls
+Applications.Mill.RollGap.GaugeControlAgc.AgcA100.Agc.ThfbOn,THFB.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.RollGap.AgcData.ThffAdd,THFF.STATUS,,,1,0,BOOLEAN,REVIEW,"'Add' reads as an additive trim term not an on/off flag"
+Applications.Mill.RollGap.AgcData.Spff.CtrlAdd,SPFF.STATUS,,,1,0,BOOLEAN,REVIEW,"As above - confirm this is a flag"
+Applications.Mill.RollGap.AgcData.Mfc.CtrlAdd,MFC.STATUS,,,1,0,BOOLEAN,REVIEW,"As above - confirm this is a flag"
+#
+# ------------------------------------------------------ Roll geometry and wear
+Applications.MillPilotDrives.Presetting.RdmToPil.DmBurTop,BUR.TOP.DIAMETER,mm,mm,1,0,NUMBER,OK,"Also closes a standing ASSUMPTIONS placeholder"
+Applications.MillPilotDrives.Presetting.RdmToPil.DmWrTop,WR.TOP.DIAMETER,mm,mm,1,0,NUMBER,OK,"Work roll diameter was a placeholder; this measures it"
+Applications.MillPilotDrives.Presetting.RdmToPil.DmWrBot,WR.BOTTOM.DIAMETER,mm,mm,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Presetting.Rolls.RdmToPil.DmBurBot,BUR.BOTTOM.DIAMETER,mm,mm,1,0,NUMBER,OK,
+#
+# --------------------------------------------------- Mill stand and rolling
+Applications.Mill.RollGap.RgcData.Ctrl.TrfAct,ROLL.FORCE.ACTUAL,T,t,1,0,NUMBER,OK,"HIGHEST VALUE ROW. Promotes roll force from ESTIMATED to MEASURED"
+Applications.Mill.RollGap.RollGapControl.RgcPos.RgcPos2A100.PosActIn,ROLL.GAP.ACTUAL,mm,mm,1,0,NUMBER,OK,"Promotes roll gap from CALCULATED; removes the gaugemeter-inverse dependency"
+Applications.MillPilotDrives.IODdata.VrefMill,MILL.SPEED.REF,mpm,m/min,1,0,NUMBER,OK,
+Applications.MillPilotDrives.PrrToPil.VRefOperation,MILL.SPEED.ACTUAL,mpm,m/min,1,0,NUMBER,REVIEW,"Named VRef which reads as a reference not an actual; confirm it is measured speed"
+Applications.MillPilotDrives.Drives.Mill.Drv.FromDrv.TorqRef2Perc,DRIVE.TORQUE,%,kNm,1,0,NUMBER,REVIEW,"PERCENT of rating; Scale must become ratedTorque/100"
+Applications.MillPilotDrives.Drives.Milldrive.FromDrive.Drv.FromDrv.MotCurrent,DRIVE.CURRENT,A,A,1,0,NUMBER,OK,
+Applications.Mill.RollGap.RgcData.Pos.Tlt.Act,ROLL.GAP.TILT,um,um,1,0,NUMBER,OK,
+Applications.Mill.RollGap.RgcData.Ctrl.DrfAct,ROLL.FORCE.DIFF_REF,T,t,1,0,NUMBER,REVIEW,"Plant value is the ACTUAL differential force; twin tag is a REFERENCE. Semantics differ"
+Applications.Mill.RollGap.IOJOA2.RgcCtrlJO.PCntrOs,HYD.LOADING.PRESSURE,bar,bar,1,0,NUMBER,REVIEW,"Counter pressure OS; confirm it is the HAGC capsule loading pressure"
+Applications.Mill.RollGap.RgcData.Ctrl.Sv1OuIDs,,%,,1,0,NUMBER,NEW,"Servo output drive side; no twin tag"
+Applications.Mill.RollGap.RgcData.Ctrl.Sv1OuIOs,,%,,1,0,NUMBER,NEW,"Servo output operator side; no twin tag"
+Applications.Mill.RollGap.WorkRollBending.Rbc.RbcPrs.PPosAct,HYD.BENDING.PRESSURE,bar,bar,1,0,NUMBER,REVIEW,"NOT WR.TOP.BENDING. Positive/negative are pressure polarities not upper/lower rolls"
+Applications.Mill.RollGap.WorkRollBending.Rbc.RbcPrs.PNegAct,,bar,,1,0,NUMBER,NEW,"Negative bending pressure; no twin tag. Converting to kN needs piston area"
+Applications.MillPilotDrives.PrrToPil.PassNumber,PASS.NUMBER,,,1,0,NUMBER,OK,
+#
+# ------------------------------------------------------- Thickness - DTR gauge
+Applications.Mill.RollGap.AgcData.DhMeasSide1,STRIP.THICKNESS.DEVIATION,um,um,1,0,NUMBER,REVIEW,"Side1/Side2 cross over between the DTR and ETR blocks - confirm which side is which"
+Applications.Mill.RollGap.AgcData.HRefSide2,STRIP.THICKNESS.REF,mm,mm,1,0,NUMBER,REVIEW,"DTR block uses Side1 for actual but Side2 for reference; verify"
+Applications.Mill.RollGap.IOJOA100.ThkSide1e,GAUGE.DTR.THICKNESS,mm,mm,1,0,NUMBER,REVIEW,"See the side-numbering note above"
+Applications.Mill.RollGap.AgcData.DhDatVldSide2,GAUGE.DTR.READY,,,1,0,BOOLEAN,REVIEW,"See the side-numbering note above"
+#
+# ------------------------------------------------------- Thickness - ETR gauge
+Applications.Mill.RollGap.AgcData.DhMeasSide2,,um,,1,0,NUMBER,NEW,"Twin carries one deviation tag only; add an ETR-side one to use this"
+Applications.Mill.RollGap.AgcData.HRefSide1,,mm,,1,0,NUMBER,NEW,"Twin carries one thickness reference only"
+Applications.Mill.RollGap.IOJOA100.ThkSide2e,GAUGE.ETR.THICKNESS,mm,mm,1,0,NUMBER,REVIEW,"See the side-numbering note above"
+Applications.Mill.RollGap.AgcData.DhDatVldSide1,GAUGE.ETR.READY,,,1,0,BOOLEAN,REVIEW,"See the side-numbering note above"
+#
+# -------------------------------------------------------------- ETR parameters
+Applications.MillPilotDrives.Tr1ToPil.TensionOn,ETR.STATUS,,,1,0,BOOLEAN,REVIEW,"Boolean feeding a status word"
+Applications.MillPilotDrives.Drives.DriveCtrlA100.Tr1TenAct,ETR.TENSION,kg,kN,0.00980665,0,NUMBER,REVIEW,"Tr1 assumed = ETR; see the inversion note"
+Applications.MillPilotDrives.Drives.TensionReel1.CoiDm.CoiDmLogic.SetDiaP,,mm,,1,0,NUMBER,NEW,"Diameter setpoint; twin carries actual only"
+Applications.MillPilotDrives.Tr1ToPil.StripLength,ETR.LENGTH,m,m,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Tr1ToPil.Layer,,,,1,0,NUMBER,NEW,"Add ETR.LAYERS to carry this"
+Applications.MillPilotDrives.Tr1ToPil.Diameter,ETR.DIAMETER,mm,mm,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Drives.TensionReel1.Coi.Drv.FromDrv.TorqRef2Perc,ETR.TORQUE,%,kNm,1,0,NUMBER,REVIEW,"PERCENT of rating; needs the rated-torque base"
+Applications.MillPilotDrives.Tr1ToPil.MotCurrent,ETR.CURRENT,A,A,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Drives.DriveCtrlA100.PrrToPil.ThicknEntry,ETR.THICKNESS,mm,mm,1,0,NUMBER,REVIEW,"Same address as STRIP.THICKNESS.ENTRY"
+#
+# -------------------------------------------------------------- POR parameters
+Applications.MillPilotDrives.PorToPil.TensionOn,POR.STATUS,,,1,0,BOOLEAN,REVIEW,"Boolean feeding a status word"
+Applications.MillPilotDrives.Drives.DriveCtrlA100.PorTenAct,POR.TENSION,kg,kN,0.00980665,0,NUMBER,OK,
+Applications.MillPilotDrives.Drives.PayOffReel.CoiDm.CoiDmLogic.SetDiaP,,mm,,1,0,NUMBER,NEW,"Diameter setpoint; twin carries actual only"
+Applications.MillPilotDrives.PorToPil.StripLength,POR.LENGTH,m,m,1,0,NUMBER,OK,
+Applications.MillPilotDrives.PorToPil.Layer,POR.LAYERS,,,1,0,NUMBER,OK,
+Applications.MillPilotDrives.PorToPil.Diameter,POR.DIAMETER,mm,mm,1,0,NUMBER,OK,
+Applications.MillPilotDrives.Drives.PorToPil.TorqRef2Perc,POR.TORQUE,%,kNm,1,0,NUMBER,REVIEW,"PERCENT of rating; needs the rated-torque base"
+Applications.MillPilotDrives.Drives.PorToPil.MotCurrent,POR.CURRENT,A,A,1,0,NUMBER,OK,
+#
+# --------------------------------------------------------- Media system health
+Applications.Mill.Media.MedToPilBit.LpHydOK,LP.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.MedToPilBit.HpLoadOnF,HP.LOADING.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.MedToPilBit.HpBendOnF,HP.BENDING.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.Media.MedToPilBit.LubricOK,LUBRICATION.STATUS,,,1,0,BOOLEAN,OK,
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.MedToPilBit.RollOilOK,COOLANT.STATUS,,,1,0,BOOLEAN,OK,
+Applications.Mill.MedToPilBit.FumeExOnF,EXHAUST.STATUS,,,1,0,BOOLEAN,OK,
+#
+# ----------------------------------------------------------------- Mill status
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.Pil.RollingMode,,,,1,0,BOOLEAN,NEW,"MILL.STATUS is CALCULATED in the twin; these six words are its real inputs"
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.Pil.RollChange,,,,1,0,BOOLEAN,NEW,
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.Pil.WarmUpMode,,,,1,0,BOOLEAN,NEW,
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.Pil.RecoilingOp,,,,1,0,BOOLEAN,NEW,
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.Pil.SkinPassMode,,,,1,0,BOOLEAN,NEW,
+Applications.MillPilotDrives.RgnData.Asd.AsdBlock,,,,1,0,BOOLEAN,NEW,
+#
+# ----------------------------------------------------------------- Stop status
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.Pil.LineEStop,EMERGENCY.STOP,,,1,0,BOOLEAN,REVIEW,"Twin treats E-stop as INVERTED: pressed = abnormal. Confirm the plant polarity"
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.Pil.LineFStop,FAST.STOP,,,1,0,BOOLEAN,OK,
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.Pil.LineNormalStop,,,,1,0,BOOLEAN,NEW,"No twin tag for normal stop"
+Applications.MillPilotDrives.PilotCtrl.PilotCtrlA100.MfToPilBit.RelThreading,MILL.INTERLOCK,,,1,0,BOOLEAN,REVIEW,"RelThreading reads as threading release not a mill-ready interlock"
+#
+# ------------------------------------------------------ Distance/time counters
+Applications.MillPilotDrives.PilotCtrl.Rgn.RgnPar.Rgn.Asd.DistToSlow,,m,,1,0,NUMBER,NEW,
+Applications.MillPilotDrives.PilotCtrl.Rgn.RgnData.Asd.TimeToSlow,,s,,1,0,NUMBER,NEW,
+Applications.MillPilotDrives.PilotCtrl.Rgn.RgnPar.Rgn.Asd.DistToStop,,m,,1,0,NUMBER,NEW,
+Applications.MillPilotDrives.PilotCtrl.Rgn.RgnPar.Rgn.Asd.TimeToStop,,s,,1,0,NUMBER,NEW,
+#
+# =====================================================================
+# THE DTR / ETR INVERSION - READ BEFORE TRUSTING ANY TENSION ROW
+#
+# The twin contradicts itself and this file follows the UI, not the catalogue:
+#
+#   tag_definitions.sql  DTR.* = "Decoiler / ENTRY tension reel"
+#                        ETR.* = "EXIT tension reel"
+#   TwinCanvas.razor     DTR   = "Delivery tension reel"
+#                        ETR   = "Entry tension reel"
+#   schematic            POR -> ETR -> 4HI MILL -> DTR   (DTR is delivery)
+#
+# This file assumes Tr1 = ETR = entry and Tr2 = DTR = delivery, matching the UI
+# and your plant document. If the catalogue descriptions are the correct ones
+# instead, every Tr1/Tr2 row here is inverted and entry/exit tensions will land
+# on opposite reels while looking entirely plausible. Settle it first.
+# =====================================================================

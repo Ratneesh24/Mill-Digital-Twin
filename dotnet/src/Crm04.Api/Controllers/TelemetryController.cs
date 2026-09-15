@@ -48,28 +48,6 @@ public sealed class TelemetryController : ControllerBase
     [HttpGet("tags/inventory")]
     public ActionResult<TagInventory> Inventory() => Ok(TagCatalog.Inventory);
 
-    /// <summary>
-    /// Switch the operating mode.
-    ///
-    /// This does NOT let a client choose a friendlier badge for a value. It changes which §7.4
-    /// availability rules the SERVER applies when it builds the next frame, so the answer still
-    /// comes from TagFactory and the catalogue. What it enables is the 46-tag rehearsal: the same
-    /// numbers, shown with the provenance they will carry on the real CRM04 extract, so you can
-    /// see how much of the dashboard survives contact with the real feed before it arrives.
-    /// </summary>
-    [HttpPost("mode/{mode}")]
-    public ActionResult SetMode(string mode)
-    {
-        if (!WireNames.TryParseOperatingMode(mode, out var parsed))
-        {
-            return BadRequest($"Unknown mode '{mode}'. Expected SIMULATION, SIM_46TAG or LIVE.");
-        }
-
-        return _source.TrySetMode(parsed)
-            ? NoContent()
-            : Conflict($"The active source cannot serve {parsed.ToWire()}.");
-    }
-
     /// <summary>The latest full envelope: tags, summary, alarms and interlocks for one instant.</summary>
     [HttpGet("telemetry/latest")]
     public ActionResult<TelemetryEnvelope> Latest() =>

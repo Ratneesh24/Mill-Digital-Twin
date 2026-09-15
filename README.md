@@ -67,7 +67,12 @@ or `src/machine`. It drives the engine at a fixed time step and asserts all ten
 
 ## What you are looking at
 
-The application opens in **SIMULATION** mode with a coil charged and the mill at
+> **This section describes the frozen React reference app** (`npm run dev`). The
+> delivered .NET/Blazor twin is **LIVE-only**: it has no mode selector, no
+> simulation controls and no START strip, and it shows `NO FEED` until a real
+> plant frame arrives. See `dotnet/README.md`.
+
+The React app opens in **SIMULATION** mode with a coil charged and the mill at
 READY. Press **START** on the strip under the 3D view.
 
 Five things worth doing:

@@ -10,23 +10,26 @@
  *   dotnet run --project dotnet/src/Crm04.Web    # :5240
  *   npm run check:smoke
  *
- * WHAT CHANGED WHEN THIS RETARGETED FROM REACT TO BLAZOR. The class names
- * survived the port, so most of this file did too. Three things did not, and
- * they are architecture, not cosmetics:
+ * THE APP IS LIVE-ONLY. There is no operating-mode selector and no simulation
+ * control anywhere: the mode is whatever the feed's source declares, never a
+ * click. So instead of switching modes, this test asserts the affordances are
+ * ABSENT, and it runs against one of three expected feed states:
  *
- *  1. THERE IS NO IN-BROWSER SOLVER. The React app ran a SimulationEngine in the
- *     tab and START commanded it. The Blazor app's mill motion arrives from the
- *     API's replay feed, so its START/STOP controls are rendered DISABLED with
- *     the reason stated — "a working START button would be a lie". This test now
- *     waits for the feed to reach ROLLING on its own and asserts the commands
- *     stay disabled, which is the real contract.
+ *   SMOKE_EXPECT=feed    (default) any feed, including the Development replay.
+ *   SMOKE_EXPECT=live    as above, and NO value may be badged SIM — on a real
+ *                        plant feed a SIM badge means the data is not live.
+ *   SMOKE_EXPECT=nofeed  no plant frame has arrived: every page must show the
+ *                        NO FEED state and draw no mill at all.
  *
- *  2. LIVE MODE IS A SERVER-SIDE RE-BADGE. The browser never talks to a gateway;
- *     the API re-badges provenance and pushes a new catalogue. The old negative
- *     path stubbed `window.WebSocket` to simulate an absent gateway — doing that
- *     here would kill the Blazor circuit itself, since that same WebSocket IS
- *     the app. Mode switching is checked through what it actually changes: the
- *     number of readouts degraded to NO TAG.
+ * Other points of design:
+ *
+ *  1. THERE IS NO IN-BROWSER SOLVER and no command strip. Absence is asserted,
+ *     not disabled-ness: a filter over buttons that no longer exist returns [],
+ *     and `[].every(...)` is true, so a "commands stay disabled" check would pass
+ *     forever while testing nothing.
+ *
+ *  2. THE BROWSER NEVER TALKS TO A GATEWAY. Stubbing `window.WebSocket` would
+ *     kill the Blazor circuit itself, since that same WebSocket IS the app.
  *
  *  3. ESCAPE DOES NOT CLOSE THE DIAGNOSTICS DIALOG. DiagnosticsDialog.razor
  *     wires no key handler; it closes on the ✕ or the overlay. That is a real
@@ -40,6 +43,12 @@ import puppeteer, { type Browser, type Page } from 'puppeteer-core'
 
 const URL = process.env.SMOKE_URL ?? 'http://localhost:5240/'
 const OUT_DIR = process.env.SMOKE_OUT ?? '.'
+
+type Expect = 'feed' | 'live' | 'nofeed'
+const EXPECT = (process.env.SMOKE_EXPECT ?? 'feed') as Expect
+if (!['feed', 'live', 'nofeed'].includes(EXPECT)) {
+  throw new Error(`SMOKE_EXPECT must be feed, live or nofeed (got '${EXPECT}')`)
+}
 
 const CANDIDATES = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -68,6 +77,16 @@ async function shot(page: Page, name: string): Promise<void> {
  */
 async function waitInteractive(page: Page): Promise<void> {
   await page.waitForFunction(() => 'Blazor' in window, { timeout: 30_000 })
+
+  if (EXPECT === 'nofeed') {
+    // With no feed the header clock never leaves --:--:--, so waiting for it
+    // would time out. Wait for the NO FEED state, then give the circuit a moment
+    // to wire up: .no-feed is also in the prerendered HTML.
+    await page.waitForSelector('.no-feed', { timeout: 30_000 })
+    await new Promise((r) => setTimeout(r, 3000))
+    return
+  }
+
   // A live clock proves the circuit is not merely open but delivering frames.
   await page.waitForFunction(
     () => !document.body.innerText.includes('--:--:--'),
@@ -118,6 +137,16 @@ async function main(): Promise<void> {
   // there first.
   await page.waitForSelector('.workspace-nav', { timeout: 30_000 })
   await waitInteractive(page)
+
+  // Whatever the feed is doing, nothing may offer a way to choose simulated data.
+  await assertNoSimulationAffordances(page)
+
+  if (EXPECT === 'nofeed') {
+    await runNoFeed(page)
+    await finish(browser)
+    return
+  }
+
   if (!(await clickByText(page, '3D DIGITAL TWIN'))) throw new Error('3D twin nav link not found')
 
   // The twin has to actually put a canvas on the screen. The scene module sizes
@@ -141,19 +170,13 @@ async function main(): Promise<void> {
 
   await shot(page, 'twin-01-ready')
 
-  // The replay feed drives the mill; nothing in the browser starts it. Reaching
-  // ROLLING unaided is the assertion that the feed is actually flowing.
-  await page.waitForFunction(() => document.body.innerText.includes('ROLLING'), { timeout: 30_000 })
-  await shot(page, 'twin-02-rolling')
+  // The feed drives the page; nothing in the browser starts it. The NO FEED
+  // curtain lifting is the assertion that frames are actually arriving. (Not
+  // ROLLING: a real mill is entitled to be idle when the test runs.)
+  await page.waitForFunction(() => !document.querySelector('.no-feed'), { timeout: 30_000 })
+  await shot(page, 'twin-02-feed')
 
-  // ...and the command strip must stay disabled while that is true. An enabled
-  // START on a replay feed would be the exact lie the port set out to avoid.
-  const commandsInert = await page.evaluate(() =>
-    [...document.querySelectorAll('.twin-viewport button')]
-      .filter((b) => ['START', 'STOP', 'FAST STOP', 'RESET'].includes((b.textContent ?? '').trim()))
-      .every((b) => (b as HTMLButtonElement).disabled),
-  )
-  if (!commandsInert) problems.push('Replay feed left a simulation command enabled')
+  await checkTwinDock(page)
 
   const readouts = await page.$$eval('.num', (els) =>
     els.slice(0, 400).map((e) => e.textContent ?? ''),
@@ -300,56 +323,31 @@ async function main(): Promise<void> {
     problems.push('diagnostics dialog did not close')
   }
 
-  // §7.4 degradation: switching to the 46-tag profile must turn the values the
-  // CRM04 extract does not carry into "NO TAG", not into plausible numbers.
-  //
-  // THE OPERATING MODE IS SERVER-SIDE GLOBAL STATE, not a browser preference —
-  // the API re-badges the feed and pushes a new catalogue, and that outlives the
-  // browser, the page and this whole test run. So the starting mode has to be
-  // ESTABLISHED, never assumed. Assuming it is how this check quietly became a
-  // no-op: a previous run exited in SIM·46-TAG, so "switch to 46-tag" changed
-  // nothing and the comparison read 46 → 46 and still called itself a pass.
-  if (!(await setMode(page, 'SIMULATION'))) {
-    problems.push('could not put the feed into SIMULATION mode to measure from')
-  }
-  const beforeNoTag = await countNoTag(page)
-
-  if (!(await setMode(page, 'SIM ·'))) problems.push('could not switch to SIM · 46-TAG')
-  // The re-badged catalogue lands a frame or two after the mode flag itself.
-  await page.waitForFunction(
-    (before: number) =>
-      [...document.querySelectorAll('span')].filter((s) => (s.textContent ?? '').trim() === 'NO TAG')
-        .length > before,
-    { timeout: 20_000 },
-    beforeNoTag,
-  ).catch(() => {})
-  const afterNoTag = await countNoTag(page)
-  console.log(`  NO TAG badges: ${beforeNoTag} in SIMULATION → ${afterNoTag} in SIM·46-TAG`)
-  if (afterNoTag <= beforeNoTag) {
-    problems.push(
-      `SIM·46-TAG did not degrade any readout to NO TAG (${beforeNoTag} → ${afterNoTag})`,
-    )
-  }
-  await shot(page, 'twin-07-46tag')
-
-  // LIVE is read-only with respect to the machine and, on this stack, is the
-  // same feed re-badged. It must switch cleanly and leave the workspace
-  // rendering — any breakage shows up in the console listener above.
-  if (!(await setMode(page, 'LIVE'))) problems.push('could not switch to LIVE')
-  const liveOk = await page.evaluate(
+  // PROVENANCE ON THE DASHBOARD. With a feed present the workspace must draw,
+  // and every value carries the badge its source earned. On a real plant feed
+  // TagFactory can never produce SIM, so one SIM badge means the data is not
+  // live — a strictly stronger check than the old mode-switch NO TAG delta.
+  const dashOk = await page.evaluate(
     () =>
       !!document.querySelector('.kpi-ribbon') &&
       !!document.querySelector('.operating-context') &&
       document.querySelectorAll('.kpi-tile').length > 0,
   )
-  if (!liveOk) problems.push('LIVE mode left the dashboard unrendered')
+  if (!dashOk) problems.push('dashboard did not render with a feed present')
 
-  // Leave the feed as we found it. This is not tidiness: skip it and the NEXT
-  // run starts in the wrong mode and its degradation check silently passes on a
-  // comparison that never happened.
-  if (!(await setMode(page, 'SIMULATION'))) {
-    problems.push('failed to restore SIMULATION mode for the next run')
+  const badges = await page.evaluate(() => {
+    const spans = [...document.querySelectorAll('span')].map((s) => (s.textContent ?? '').trim())
+    return {
+      sim: spans.filter((t) => t === 'SIM').length,
+      live: spans.filter((t) => t === 'LIVE').length,
+      noTag: spans.filter((t) => t === 'NO TAG').length,
+    }
+  })
+  console.log(`  dashboard badges: ${badges.live} LIVE, ${badges.sim} SIM, ${badges.noTag} NO TAG`)
+  if (EXPECT === 'live' && badges.sim > 0) {
+    problems.push(`${badges.sim} value(s) badged SIM on a feed expected to be LIVE`)
   }
+  await shot(page, 'p1-dashboard-badges')
 
   for (const [width, height] of [[1366, 768], [768, 1024], [390, 844]]) {
     await page.setViewport({ width, height })
@@ -387,26 +385,126 @@ async function main(): Promise<void> {
     }
   }
 
+  await finish(browser)
+}
+
+async function finish(browser: Browser): Promise<void> {
   await browser.close()
 
   console.log('')
   if (problems.length === 0) {
-    console.log('SMOKE TEST PASSED — clean console, no page errors')
+    console.log(`SMOKE TEST PASSED (${EXPECT}) — clean console, no page errors`)
     return
   }
-  console.log(`SMOKE TEST FAILED — ${problems.length} problem(s):`)
+  console.log(`SMOKE TEST FAILED (${EXPECT}) — ${problems.length} problem(s):`)
   for (const p of problems) console.log(`  ${p}`)
   process.exit(1)
 }
 
-/** How many readouts on screen are showing "NO TAG". */
-async function countNoTag(page: Page): Promise<number> {
-  return page.evaluate(
-    () =>
-      Array.from(document.querySelectorAll('span')).filter(
-        (s) => (s.textContent ?? '').trim() === 'NO TAG',
-      ).length,
-  )
+/**
+ * The go-live contract: nothing in the workspace may offer a way to choose
+ * simulated data. The selector's own ARIA group is checked as well as its
+ * labels, so a restyled or relabelled selector still trips this.
+ */
+async function assertNoSimulationAffordances(page: Page): Promise<void> {
+  const found = await page.evaluate(() => ({
+    modeGroup: !!document.querySelector('[role="group"][aria-label="Operating mode"]'),
+    modeButtons: [...document.querySelectorAll('button')]
+      .map((b) => (b.textContent ?? '').trim())
+      .filter((t) => t === 'SIMULATION' || t.startsWith('SIM ·')),
+  }))
+  if (found.modeGroup) problems.push('the operating-mode selector is present in the header')
+  if (found.modeButtons.length > 0) {
+    problems.push(`simulation mode buttons present: ${found.modeButtons.join(', ')}`)
+  }
+}
+
+/**
+ * The 3D twin page's dock: the command strip and simulation panel are GONE
+ * (absence, not disabled-ness — see the header note), and the feed's vital
+ * signs survived the removal. textContent, not innerText, because the labels
+ * are uppercased by CSS and innerText would report the transformed text.
+ */
+async function checkTwinDock(page: Page): Promise<void> {
+  const dock = await page.evaluate(() => {
+    const text = document.body.textContent ?? ''
+    return {
+      commands: [...document.querySelectorAll('button')]
+        .map((b) => (b.textContent ?? '').trim())
+        .filter((t) => ['START', 'STOP', 'FAST STOP', 'RESET'].includes(t)),
+      simWording: ['SIMULATION CONTROL', 'SIMULATED STATE ONLY', 'Simulation controls'].filter((w) =>
+        text.includes(w),
+      ),
+      missingFeed: ['Source', 'Publish rate', 'Frame age', 'Frames received'].filter(
+        (l) => !text.includes(l),
+      ),
+    }
+  })
+  if (dock.commands.length > 0) problems.push(`simulation commands still on the twin page: ${dock.commands.join(', ')}`)
+  if (dock.simWording.length > 0) problems.push(`simulation wording still on the twin page: ${dock.simWording.join(', ')}`)
+  if (dock.missingFeed.length > 0) problems.push(`FEED block missing on the twin page: ${dock.missingFeed.join(', ')}`)
+}
+
+/**
+ * No plant frame has arrived. Every page must say so and draw no mill: before
+ * the gate existed, placeholder defaults painted an idle mill with pass 0/0 and
+ * "All clear — no active alarms", which reads exactly like a real quiet one.
+ */
+async function runNoFeed(page: Page): Promise<void> {
+  if (await page.$('.kpi-ribbon')) problems.push('dashboard drew KPI tiles with no plant feed')
+  if (await page.$('.operating-context')) problems.push('dashboard drew the operating context with no plant feed')
+  await shot(page, 'nofeed-dashboard')
+
+  for (const [label, path, name] of [
+    ['REAL-TIME TRENDS', '/trends', 'nofeed-trends'],
+    ['3D DIGITAL TWIN', '/3d-twin', 'nofeed-twin'],
+  ] as const) {
+    if (!(await navigate(page, label, path, '.no-feed'))) {
+      problems.push(`${path} did not show the NO FEED state`)
+    }
+    await new Promise((r) => setTimeout(r, 1500))
+    await shot(page, name)
+  }
+
+  // Still on the twin page: no false all-clear, and the feed block is there.
+  if (await page.evaluate(() => (document.body.textContent ?? '').includes('All clear'))) {
+    problems.push('twin page claims "All clear" with no plant feed')
+  }
+  await checkTwinDock(page)
+
+  // The status strip and the 3D labels must not describe a mill either. Without
+  // a frame the strip used to print "IDLE · FORWARD · ETR → DTR" from defaults,
+  // and every label read NO TAG — a claim about a feed that does not exist.
+  // Check each LABEL, not the wrapper. This used to read the wrapper's computed
+  // visibility and passed while every label stayed on screen: `visibility` can
+  // be switched back on by a child, and the projector does exactly that.
+  // checkVisibility() resolves inheritance and opacity on the element itself.
+  const twin = await page.evaluate(() => {
+    const labels = [...document.querySelectorAll('.twin-labels *')].filter(
+      (el) => el.children.length === 0 && (el.textContent ?? '').trim().length > 0,
+    )
+    const shown = labels.filter((el) =>
+      (el as Element & { checkVisibility(o: object): boolean }).checkVisibility({
+        checkOpacity: true,
+        checkVisibilityCSS: true,
+      }),
+    )
+    return {
+      pill: (document.querySelector('.twin-viewport .status-pill')?.textContent ?? '').trim(),
+      labelCount: labels.length,
+      labelsShown: shown.length,
+      sample: shown.slice(0, 3).map((el) => (el.textContent ?? '').trim()),
+      sourceChip: (document.querySelector('.brand-header')?.textContent ?? '').replace(/\s+/g, ' '),
+    }
+  })
+  console.log(`  twin labels: ${twin.labelsShown} of ${twin.labelCount} visible`)
+  if (twin.pill !== 'NO FEED') problems.push(`twin status strip claims "${twin.pill}" with no plant feed`)
+  if (twin.labelsShown > 0) {
+    problems.push(`${twin.labelsShown} 3D label(s) visible with no plant feed (e.g. ${twin.sample.join(', ')})`)
+  }
+  if (!twin.sourceChip.includes('SOURCE NO FEED')) {
+    problems.push('header source chip does not say NO FEED with no plant feed')
+  }
 }
 
 /**
@@ -444,70 +542,6 @@ async function circuitAlive(page: Page): Promise<boolean> {
     if (!err) return true
     return getComputedStyle(err).display === 'none'
   })
-}
-
-/**
- * Put the feed into an operating mode and wait until the UI confirms it.
- *
- * Clicking once is not enough, for three compounding reasons: `SetModeAsync` is
- * a server round-trip, the mode buttons disable themselves while it is in
- * flight, and the new mode only reaches this browser on a later telemetry
- * frame. A click that lands on a momentarily-disabled button is dropped in
- * silence. So: click, wait for aria-pressed="true" on the target, and retry.
- *
- * Scoped to the operating-mode group deliberately — "LIVE" also names a
- * provenance badge and the trends pause control.
- */
-async function setMode(page: Page, label: string): Promise<boolean> {
-  for (let attempt = 0; attempt < 6; attempt++) {
-    for (let i = 0; i < 10; i++) {
-      const state = await page.evaluate((want) => {
-        const group = document.querySelector('[role="group"][aria-label="Operating mode"]')
-        if (!group) return 'NO GROUP'
-        const buttons = [...group.querySelectorAll('button')]
-        for (const b of buttons) {
-          if ((b.textContent ?? '').trim().startsWith(want)) {
-            if (b.getAttribute('aria-pressed') === 'true') return 'PRESSED'
-            return b.disabled ? 'BUSY' : 'READY'
-          }
-        }
-        return 'NOT FOUND'
-      }, label)
-      if (state === 'PRESSED') return true
-      if (state === 'NO GROUP' || state === 'NOT FOUND') return false
-      if (state === 'READY') break
-      await new Promise((r) => setTimeout(r, 500))
-    }
-
-    await page.evaluate((want) => {
-      const group = document.querySelector('[role="group"][aria-label="Operating mode"]')
-      if (!group) return
-      const buttons = [...group.querySelectorAll('button')]
-      for (const b of buttons) {
-        if ((b.textContent ?? '').trim().startsWith(want) && !b.disabled) {
-          b.click()
-          return
-        }
-      }
-    }, label)
-
-    for (let i = 0; i < 12; i++) {
-      await new Promise((r) => setTimeout(r, 500))
-      const ok = await page.evaluate((want) => {
-        const group = document.querySelector('[role="group"][aria-label="Operating mode"]')
-        if (!group) return false
-        const buttons = [...group.querySelectorAll('button')]
-        for (const b of buttons) {
-          if ((b.textContent ?? '').trim().startsWith(want)) {
-            return b.getAttribute('aria-pressed') === 'true'
-          }
-        }
-        return false
-      }, label)
-      if (ok) return true
-    }
-  }
-  return false
 }
 
 /**

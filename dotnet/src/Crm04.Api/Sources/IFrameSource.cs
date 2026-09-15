@@ -35,20 +35,13 @@ public interface IFrameSource : IAsyncDisposable
 
     /// <summary>
     /// How values from this source must be badged. A replayed simulator frame is SIMULATION;
-    /// a real gateway feed is LIVE. The source declares this - it is not a UI preference.
+    /// a real plant feed is LIVE. The source declares this - it is not a UI preference.
+    ///
+    /// There is deliberately no setter and no override. LIVE is EARNED by the data, never
+    /// asserted by a client: the old mode switch let a request re-badge replayed simulator values,
+    /// and on a live-only plant display that is exactly the claim that must be impossible.
     /// </summary>
     OperatingMode Mode { get; }
-
-    /// <summary>
-    /// Re-badge the feed. Returns false when the source cannot honour the request.
-    ///
-    /// This is NOT a UI preference reaching into the data. It changes which §7.4 availability
-    /// rules the SERVER applies when it builds tags, so the answer still comes from TagFactory
-    /// and the catalogue - the client is only asking which question to ask. It is what makes the
-    /// 46-tag rehearsal possible: the same values, shown with the provenance they will carry on
-    /// the real CRM04 extract.
-    /// </summary>
-    bool TrySetMode(OperatingMode mode);
 
     Task StartAsync(CancellationToken ct);
 

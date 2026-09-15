@@ -6,8 +6,9 @@
     keeps running behind the page change, so arriving from the dashboard never
     restarts anything, and pass, direction and coil carry over untouched.
 
-    Port of src/components/pages/TwinPage.tsx. The dock carries the same two
-    panels in the same order: SimulationControls, then InterlockStatus.
+    Port of src/components/pages/TwinPage.tsx. The dock carries the interlock chain,
+    alarms and the feed's vital signs. The simulation controls were removed for go-live;
+    with no plant frame yet, the dock states NO FEED instead of a false all-clear.
 *@
 @using Crm04.Domain.Types
 @using Crm04.Domain.Util
@@ -29,7 +30,14 @@
     </div>
 
     <div class="grid min-h-0 min-w-0 content-start gap-[14px]">
-        <SimulationControls />
+        @* No frame, no mill: without this the Alarms panel below printed "All clear - no active
+           alarms" for a mill nobody was watching. *@
+        @if (!Mill.HasData)
+        {
+            <NoFeed />
+        }
+        else
+        {
         <InterlockStatus />
 
         <Panel Title="Alarms">
@@ -62,6 +70,9 @@
                 DATA STALE — scene frozen. Last frame @JsNumber.ToFixed((Mill.Summary?.Communication.AgeMs ?? 0) / 1000, 1) s ago.
             </div>
         }
+        }
+
+        <FeedStatus />
     </div>
 </div>
 

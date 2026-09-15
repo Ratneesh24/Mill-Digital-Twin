@@ -52,8 +52,11 @@ public sealed class TelemetryClient : IHostedService, IAsyncDisposable
         _connection.On<TelemetryEnvelope>("Frame", envelope =>
         {
             // The mode decides every tag's provenance, so a mode change invalidates the cached
-            // catalogue. Detected from the frame rather than from the click that caused it, so it
-            // also works when another operator switches mode on a different screen.
+            // catalogue. There is no mode selector any more - the mode is whatever the SOURCE
+            // declares - but this refresh is still load-bearing: the Oracle source reports its
+            // conservative placeholder mode until the first frame header is read, so a client that
+            // connected ahead of the feed has cached a catalogue badged for that placeholder. The
+            // first real frame carries the true mode, and this is what brings the badges into line.
             if (_tags.HasCatalog && envelope.Summary.Mode != _tags.Mode)
             {
                 _ = RefreshCatalogAsync(envelope.Summary.Mode);
@@ -72,6 +75,10 @@ public sealed class TelemetryClient : IHostedService, IAsyncDisposable
 
         _connection.Reconnected += async _ =>
         {
+            // A reconnect may be to a DIFFERENT API instance - a redeploy, a restart - which may
+            // have no feed at all. What the old connection delivered proves nothing about this one.
+            _mill.Reset();
+
             // The catalogue could have changed across a redeploy, and every ordinal on the wire
             // depends on it. Re-fetching is cheap and getting it wrong would silently shift every
             // value into a neighbouring tag's slot.
@@ -81,8 +88,14 @@ public sealed class TelemetryClient : IHostedService, IAsyncDisposable
 
         _connection.Closed += error =>
         {
+            _mill.Reset();
             _mill.SetConnectionError("Telemetry API unreachable.");
-            _log.LogError(error, "Telemetry hub connection closed.");
+            if (_stopping) return Task.CompletedTask;
+
+            // WithAutomaticReconnect gives up after its schedule. Without this the web process sat
+            // disconnected until someone restarted it - on a control-room screen nobody touches.
+            _log.LogError(error, "Telemetry hub connection closed; retrying.");
+            _ = Task.Run(ConnectWithRetryAsync, CancellationToken.None);
             return Task.CompletedTask;
         };
 
@@ -95,24 +108,37 @@ public sealed class TelemetryClient : IHostedService, IAsyncDisposable
 
     private async Task ConnectWithRetryAsync()
     {
-        while (true)
+        // One loop at a time: the startup call and a Closed event must not race two StartAsyncs.
+        if (Interlocked.Exchange(ref _connecting, 1) == 1) return;
+
+        try
         {
-            try
+            while (!_stopping)
             {
-                await _connection!.StartAsync();
-                await FetchCatalogAsync();
-                _mill.SetConnectionError(null);
-                _log.LogInformation("Connected to telemetry hub at {Url}.", _hubUrl);
-                return;
-            }
-            catch (Exception ex)
-            {
-                _mill.SetConnectionError($"Telemetry API unreachable at {_hubUrl}. Is Crm04.Api running?");
-                _log.LogWarning("Telemetry hub not reachable at {Url}: {Message}. Retrying in 3 s.", _hubUrl, ex.Message);
-                await Task.Delay(TimeSpan.FromSeconds(3));
+                try
+                {
+                    await _connection!.StartAsync();
+                    await FetchCatalogAsync();
+                    _mill.SetConnectionError(null);
+                    _log.LogInformation("Connected to telemetry hub at {Url}.", _hubUrl);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _mill.SetConnectionError($"Telemetry API unreachable at {_hubUrl}. Is Crm04.Api running?");
+                    _log.LogWarning("Telemetry hub not reachable at {Url}: {Message}. Retrying in 3 s.", _hubUrl, ex.Message);
+                    await Task.Delay(TimeSpan.FromSeconds(3));
+                }
             }
         }
+        finally
+        {
+            Interlocked.Exchange(ref _connecting, 0);
+        }
     }
+
+    private int _connecting;
+    private volatile bool _stopping;
 
     private async Task FetchCatalogAsync()
     {
@@ -148,6 +174,9 @@ public sealed class TelemetryClient : IHostedService, IAsyncDisposable
 
     public async Task StopAsync(CancellationToken ct)
     {
+        // Set first: stopping the connection raises Closed, which must not start a retry loop in a
+        // process that is shutting down.
+        _stopping = true;
         if (_connection is not null) await _connection.StopAsync(ct);
     }
 

@@ -13,18 +13,14 @@ public sealed class ReplayOptions
     public bool Loop { get; set; } = true;
 
     /// <summary>
-    /// How the frames are badged. The values are identical either way - what changes is what the
-    /// twin admits about them, and it is the most useful switch in the application:
+    /// How the frames are badged. Keep it SIMULATION.
     ///
-    ///   SIMULATION  every value badged SIM. The full simulated mill.
-    ///   SIM_46TAG   the same numbers shown with the provenance they WILL have on the real CRM04
-    ///               feed. Force degrades to ESTIMATED, roll gap to CALCULATED, bending and
-    ///               hydraulics to NO TAG. This is the §7.4 rehearsal: it shows you exactly how
-    ///               much of the dashboard survives contact with the real 6-month extract.
-    ///   LIVE        same availability rules as SIM_46TAG, but quality reads GOOD - what a real
-    ///               gateway feed would look like.
+    ///   SIMULATION  every value badged SIM - the honest description of simulator output.
+    ///   SIM_46TAG   the same numbers shown with the availability rules of the real CRM04 extract,
+    ///               still at SIMULATION quality. Permitted, but no longer surfaced anywhere.
+    ///   LIVE        REFUSED. It would give simulator output plant provenance and GOOD quality.
     ///
-    /// Set it in appsettings.json under Replay:Mode.
+    /// The replay itself only runs in Development; see Source:Kind in Program.cs.
     /// </summary>
     public string Mode { get; set; } = "SIMULATION";
 }
@@ -64,6 +60,17 @@ public sealed class ReplayFrameSource : IFrameSource
         _directory = options.Directory ?? DefaultDirectory();
         _loop = options.Loop;
         Mode = WireNames.ParseOperatingMode(options.Mode);
+
+        // A replay is simulator output. Badged LIVE, TagFactory would give every value plant
+        // provenance and GOOD quality - fabricated readings indistinguishable from measurements.
+        // That is precisely what removing the mode selector was meant to make impossible.
+        if (Mode == OperatingMode.Live)
+        {
+            throw new InvalidOperationException(
+                "Replay:Mode 'LIVE' is refused. The replay is simulator output; badging it LIVE would " +
+                "present fabricated values as plant measurements with GOOD quality. Use SIMULATION.");
+        }
+
         SourceId = $"replay:{Path.GetFileName(_directory)}";
     }
 
@@ -77,18 +84,7 @@ public sealed class ReplayFrameSource : IFrameSource
     /// Note that pointing the twin at Oracle will not change this by itself either: the source
     /// that produced the rows is what decides, not the transport that carried them.
     /// </summary>
-    public OperatingMode Mode { get; private set; }
-
-    /// <summary>
-    /// A replay can be shown under any of the three modes, because the VALUES are the same in
-    /// all three - only the §7.4 availability rules applied to them differ. That is exactly the
-    /// rehearsal the 46-tag mode exists for.
-    /// </summary>
-    public bool TrySetMode(OperatingMode mode)
-    {
-        Mode = mode;
-        return true;
-    }
+    public OperatingMode Mode { get; }
 
     public Task StartAsync(CancellationToken ct)
     {

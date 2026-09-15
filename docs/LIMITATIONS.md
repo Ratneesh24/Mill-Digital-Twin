@@ -18,8 +18,9 @@ that live feed they resolve as:
 | ESTIMATED | 1 | Model fill-in — roll separating force |
 | **NO TAG** | **45** | Nothing to show. Rendered as `NO TAG`, never as a number. |
 
-Switch the header to **SIM · 46-TAG** to see exactly this, live, on the real
-screen. The full table is on the **TAG INVENTORY** page.
+This is what the plant screen shows on the live feed. The header no longer has
+a mode switch to preview it — the twin is LIVE-only and each value's badge follows
+what its source declared. The full table is under **MODEL / DATA → Tags**.
 
 ### What the extract does not contain
 

@@ -859,6 +859,20 @@ input::placeholder {
 .panel-body th { padding-block: 10px; }
 .panel-body td { padding-block: 7px; }
 
+/* No feed: the 3D labels stay in the DOM (the projector positions them every frame) but are not
+   shown, since each would otherwise read NO TAG about a feed that does not exist yet.
+
+   OPACITY, NOT VISIBILITY. `visibility` inherits but a child may set it back to visible - and the
+   projector sets visible on every label it places, so `visibility: hidden` here hid the wrapper
+   while every label inside it stayed on screen. No descendant can be more opaque than its
+   ancestor, so opacity cannot be undone from below; and unlike display:none it keeps the labels
+   laid out, so the projector's measurements stay valid for when the feed arrives.
+   Unlayered and compound on purpose, so no utility or the base .twin-labels rule can override it. */
+.twin-labels.twin-labels-off {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .twin-viewport {
   container-type: inline-size;
   border-radius: 14px;

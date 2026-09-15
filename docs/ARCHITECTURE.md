@@ -68,8 +68,9 @@ The simulation engine does not produce a `MachineState`. It produces a
 `Record<tagName, value>` — exactly what a PLC gateway produces. Everything
 downstream of that point is identical whether the source is the simulator, a
 WebSocket gateway or a historian replay. That is what makes §14.1's "the UI must
-not know where data originates" true, and it is what makes the SIM · 46-TAG mode
-a genuine rehearsal for the live feed rather than a different code path.
+not know where data originates" true, and it is what made the former SIM · 46-TAG
+mode a genuine rehearsal for the live feed rather than a different code path. (That
+mode and its selector were removed for go-live; the delivered twin is LIVE-only.)
 
 ---
 

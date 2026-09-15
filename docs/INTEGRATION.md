@@ -261,11 +261,9 @@ damping is what makes a 5 s feed render as continuous motion.
 
 - **Read-only monitoring is strictly separated from control.** No write node is
   configured in the gateway sketch.
-- **Phase 1 is read-only.** Every UI control modifies simulated state only. In
-  LIVE mode the simulation controls disable themselves and the command strip on
-  the twin says `LIVE — READ ONLY`; a command sent in LIVE mode is refused and
-  logged to the event timeline as rejected, so the UI never implies an action
-  reached the mill.
+- **The twin is read-only.** The delivered Blazor UI has no simulation controls
+  and no command strip at all — they were removed for go-live, so nothing on
+  screen can imply an action reached the mill.
 - **Real machine commands are out of scope.** When built they go through an
   authorised `CommandService` — never from the frontend directly.
 - The gateway sketch specifies `Basic256Sha256` / `SignAndEncrypt` with
@@ -273,14 +271,19 @@ damping is what makes a 5 s feed render as continuous motion.
 
 ---
 
-## Switching sources at runtime
+## Choosing the source
 
-The header mode selector calls `machineStore.connect(mode, url)`, which
-disconnects the current source before creating the new one, guarded by a
-generation counter so overlapping connects cannot leave two sources publishing
-into the same store.
+There is no runtime switch. The delivered twin is LIVE-only: the header mode
+selector was removed for go-live, and the source is fixed by configuration.
 
-This is §17 test 10: *"Simulation disengages cleanly, live source authoritative,
-no conflicting values."* With no gateway present, switching to LIVE shows a
-disconnected feed and `NO DATA` — which is the honest outcome, and is itself a
+- **API** — `Source:Kind` = `Oracle` (plant). **Feeder** — `Source:Kind` =
+  `OpcUa` (plant). Both are required and fail fast on an unset or unrecognised
+  value, so a dropped key can never fall back to the simulator.
+- `Replay` is **refused outside Development**, and a replay may never be badged
+  `LIVE`.
+- A value's provenance follows the mode its source declared, recorded in
+  `FRAME.OP_MODE`. No client request can change it.
+
+With no plant frame — gateway not connected, API restarted, feed silent — every
+page shows `NO FEED` and draws no mill. That is the honest outcome and a direct
 demonstration of §14.5.

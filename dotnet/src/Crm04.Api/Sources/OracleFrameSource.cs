@@ -49,6 +49,9 @@ public sealed class OracleFrameSource : IFrameSource
     private long _watermark;
     private int _idleStep;
     private DateTimeOffset _nextPollAt = DateTimeOffset.MinValue;
+    // Deliberately NOT seeded Live. This field is what FRAME.OP_MODE earns, header by header;
+    // starting it at Live would assert plant provenance before a single frame had been read.
+    // Simulation is the conservative claim, and nothing is drawn before the first frame anyway.
     private OperatingMode _mode = OperatingMode.Simulation;
 
     // Headers fetched but not yet turned into frames. Read in one round trip, drained one per
@@ -72,23 +75,7 @@ public sealed class OracleFrameSource : IFrameSource
     /// writer said the values were, so a replayed simulator frame stays SIMULATION however it is
     /// read back. The transport does not get to upgrade a value's provenance.
     /// </summary>
-    public OperatingMode Mode => _modeOverride ?? _mode;
-
-    private OperatingMode? _modeOverride;
-
-    /// <summary>
-    /// Override how stored frames are badged.
-    ///
-    /// FRAME.OP_MODE records what the writer said the values were, and that stays the default -
-    /// a replayed simulator frame does not become a measurement by being read out of a database.
-    /// The override exists for the §7.4 rehearsal: showing the same rows under the availability
-    /// rules of the real CRM04 extract. It never upgrades quality, only the availability lens.
-    /// </summary>
-    public bool TrySetMode(OperatingMode mode)
-    {
-        _modeOverride = mode;
-        return true;
-    }
+    public OperatingMode Mode => _mode;
 
     public long Watermark => _watermark;
 

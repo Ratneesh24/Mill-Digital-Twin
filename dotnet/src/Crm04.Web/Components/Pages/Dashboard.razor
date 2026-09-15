@@ -29,6 +29,14 @@
 
 <PassHistoryTracker />
 
+@* NOTHING IS DRAWN WITHOUT DATA. Placeholder defaults here read as a real, idle mill - pass 0/0,
+   0 t/h, 0 % load - so until a frame has actually arrived the page says so and stops. *@
+@if (!Mill.HasData)
+{
+    <NoFeed />
+    return;
+}
+
 @if (Mill.ConnectionError is { } error)
 {
     <div class="border-alarm/50 bg-alarm/10 text-alarm mt-3 rounded-[--radius-card] border px-4 py-3 text-meta font-semibold">

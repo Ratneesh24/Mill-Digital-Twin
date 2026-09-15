@@ -1,0 +1,28 @@
+@*
+    NO FEED - what a page shows instead of a mill, until a real frame has arrived.
+
+    Before this existed, a page with no feed still drew the whole workspace from placeholder
+    defaults: pass 0/0, 0 t/h, 0 % motor load, an idle mill - and on the twin page, "All clear -
+    no active alarms". Every one of those reads as a real, quiet mill. On a control-room screen
+    that is the most dangerous thing the UI could say, so nothing is drawn until the data exists.
+
+    Gated on MillStore.HasData, which only a received frame can set.
+*@
+@using Crm04.Web.State
+@inject MillStore Mill
+
+<section class="no-feed border-alarm/50 bg-alarm/10 rounded-[--radius-card] border px-5 py-4"
+         role="status" aria-live="polite">
+    <p class="text-alarm text-meta font-bold tracking-wider">NO FEED &middot; NOTHING IS BEING SHOWN</p>
+    <p class="text-text text-body mt-1.5">@Reason</p>
+    <p class="text-text-dim text-meta mt-1">
+        Mill state appears only once a real plant frame arrives. Anything drawn before then would
+        be a guess.
+    </p>
+    <p class="text-text-faint text-meta mt-2">Open MODEL / DATA in the header for feed diagnostics.</p>
+</section>
+
+@code {
+    private string Reason => Mill.ConnectionError
+        ?? "Connected to the telemetry API, but the plant feed has not delivered a frame.";
+}

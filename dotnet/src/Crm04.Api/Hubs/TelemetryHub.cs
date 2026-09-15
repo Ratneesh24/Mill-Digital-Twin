@@ -1,4 +1,5 @@
 using Crm04.Api.Services;
+using Crm04.Api.Sources;
 using Crm04.Contracts;
 using Microsoft.AspNetCore.SignalR;
 
@@ -18,8 +19,13 @@ namespace Crm04.Api.Hubs;
 public sealed class TelemetryHub : Hub
 {
     private readonly LiveStateService _live;
+    private readonly IFrameSource _source;
 
-    public TelemetryHub(LiveStateService live) => _live = live;
+    public TelemetryHub(LiveStateService live, IFrameSource source)
+    {
+        _live = live;
+        _source = source;
+    }
 
     /// <summary>
     /// A newly connected client gets the current state immediately rather than waiting up to
@@ -39,8 +45,13 @@ public sealed class TelemetryHub : Hub
     /// <summary>
     /// The static tag catalogue. Fetched once per connection and cached by the client; it is what
     /// turns the ordinal-indexed frame arrays back into named, badged tags.
+    ///
+    /// Resolved from the SOURCE's mode, the same as <c>GET api/tags</c>. It used to read
+    /// <c>_live.State.OperatingMode</c>, which before the first frame is the empty state's
+    /// placeholder mode - so a client connecting ahead of the feed cached a catalogue badged for a
+    /// mode no source had ever declared.
     /// </summary>
-    public TagCatalogDto GetCatalog() => WireMapper.Catalog(_live.State.OperatingMode);
+    public TagCatalogDto GetCatalog() => WireMapper.Catalog(_source.Mode);
 
     /// <summary>The current envelope, for a client that wants to re-sync without reconnecting.</summary>
     public TelemetryEnvelope? GetSnapshot() => _live.Latest;

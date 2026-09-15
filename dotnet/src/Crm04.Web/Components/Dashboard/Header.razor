@@ -2,8 +2,9 @@
     HEADER - machine identity, connection state, MODEL / DATA status, navigation.
 
     Sticky command bar for the workspace. SIMULATED VALUES ARE NEVER PRESENTED AS PLANT DATA:
-    the operating-mode selector and the MODEL / DATA chip in this bar say so on every page,
-    at all times - the per-page context strip was removed as duplication (state, pass,
+    the feed-source chip and the MODEL / DATA chip in this bar state the feed's health on every
+    page, at all times. There is deliberately no operating-mode selector - the mode is decided by
+    the data, never by a click. The per-page context strip was removed as duplication (state, pass,
     direction, speed and coil all repeat in the operating context and hero below).
 *@
 @using Crm04.Domain.Configuration

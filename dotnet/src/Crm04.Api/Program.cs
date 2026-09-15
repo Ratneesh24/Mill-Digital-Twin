@@ -35,42 +35,62 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // ---------------------------------------------------------------------------------------------
-// The frame source, chosen by configuration.
+// The frame source, chosen by configuration - and FAIL-FAST about it.
 //
-//   Oracle  the production path - reads what Crm04.Feeder writes.
-//   Replay  reads the exported simulator dataset straight from disk, so the whole stack runs on
-//           localhost with no database at all. Useful for UI work and for demonstrating the twin
-//           somewhere Oracle is not available.
+//   Oracle  the production path - reads the real plant frames Crm04.Feeder writes.
+//   Replay  the exported simulator dataset. DEVELOPMENT ONLY: it exists so the UI and the browser
+//           regression suites can run on a machine with no plant connection.
 //
-// Everything above this line is identical either way: the pipeline, the projection, the alarms
-// and the entire UI cannot tell which one is running. That is the point of the interface.
+// There is no default. This used to read `?? "Replay"` with an else-branch, which meant a dropped
+// config key, a typo or a missing environment variable booted a control-room screen into looping
+// simulated data without a word. On a display operators are meant to trust, that is the worst
+// possible fallback, so an unset or unrecognised value now refuses to start.
+//
+// Replay is refused outside Development for the same reason. The plant server runs Production,
+// so no configuration mistake there can put simulator output on screen.
 // ---------------------------------------------------------------------------------------------
-var sourceKind = builder.Configuration["Source:Kind"] ?? "Replay";
+var sourceKind = builder.Configuration["Source:Kind"]
+    ?? throw new InvalidOperationException(
+        "Source:Kind is not configured. Set it to 'Oracle' for the plant feed.");
 
-if (sourceKind.Equals("Oracle", StringComparison.OrdinalIgnoreCase))
+switch (sourceKind.Trim().ToUpperInvariant())
 {
-    builder.Services.AddSingleton(new OracleConnectionFactory(
-        builder.Configuration.GetConnectionString("Crm04") ?? string.Empty));
+    case "ORACLE":
+        builder.Services.AddSingleton(new OracleConnectionFactory(
+            builder.Configuration.GetConnectionString("Crm04") ?? string.Empty));
 
-    builder.Services.AddSingleton(sp =>
-    {
-        var options = new OracleSourceOptions();
-        sp.GetRequiredService<IConfiguration>().GetSection("Source:Oracle").Bind(options);
-        return options;
-    });
+        builder.Services.AddSingleton(sp =>
+        {
+            var options = new OracleSourceOptions();
+            sp.GetRequiredService<IConfiguration>().GetSection("Source:Oracle").Bind(options);
+            return options;
+        });
 
-    builder.Services.AddSingleton<IFrameSource, OracleFrameSource>();
-}
-else
-{
-    builder.Services.AddSingleton(sp =>
-    {
-        var options = new ReplayOptions();
-        sp.GetRequiredService<IConfiguration>().GetSection("Replay").Bind(options);
-        return options;
-    });
+        builder.Services.AddSingleton<IFrameSource, OracleFrameSource>();
+        break;
 
-    builder.Services.AddSingleton<IFrameSource, ReplayFrameSource>();
+    case "REPLAY":
+        if (!builder.Environment.IsDevelopment())
+        {
+            throw new InvalidOperationException(
+                $"Source:Kind 'Replay' is refused in the '{builder.Environment.EnvironmentName}' " +
+                "environment. The replay is simulator output and may only run in Development. " +
+                "Set Source:Kind to 'Oracle' for the plant feed.");
+        }
+
+        builder.Services.AddSingleton(sp =>
+        {
+            var options = new ReplayOptions();
+            sp.GetRequiredService<IConfiguration>().GetSection("Replay").Bind(options);
+            return options;
+        });
+
+        builder.Services.AddSingleton<IFrameSource, ReplayFrameSource>();
+        break;
+
+    default:
+        throw new InvalidOperationException(
+            $"Source:Kind '{sourceKind}' is not recognised. Expected 'Oracle' (or 'Replay' in Development).");
 }
 
 builder.Services.AddSingleton<LiveStateService>();
@@ -144,6 +164,13 @@ app.Logger.LogInformation(
     TagCatalog.Count,
     TagCatalog.Inventory.MeasuredOnLiveFeed,
     TagCatalog.Inventory.UnavailableOnLiveFeed);
+
+if (app.Services.GetRequiredService<IFrameSource>() is ReplayFrameSource)
+{
+    app.Logger.LogWarning(
+        "REPLAY SOURCE SELECTED - every value on screen is SIMULATOR OUTPUT, not plant data. " +
+        "Development only; set Source:Kind to 'Oracle' for the plant feed.");
+}
 
 app.Run();
 

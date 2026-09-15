@@ -109,7 +109,9 @@ dotnet run --project src/Crm04.Feeder -- --apply-ddl    # create the schema + se
 dotnet run --project src/Crm04.Feeder                   # start writing at 10 Hz
 ```
 
-Then point the API at it by setting `Source:Kind` to `Oracle` in `src/Crm04.Api/appsettings.json`.
+The API reads it with `Source:Kind` = `Oracle`, which is what `src/Crm04.Api/appsettings.json`
+ships. In Development, `appsettings.Development.json` overrides that to `Replay`; set
+`Source__Kind=Oracle` to develop against this database instead.
 
 `--check-db` reports the banner, schema, whether Partitioning is licensed, the privileges the
 session holds and the free space — run it first on any new environment. The schema branches on
@@ -162,29 +164,32 @@ Default window is 2 hours (`Retention:Hours`) — about 7.8M rows / 310 MB, flat
 
 ## Running it on localhost
 
-Two terminals, no database required. The API reads the replay dataset through the same
-`IFrameSource` interface Oracle will use in M2, so nothing above the source knows the difference.
+**The delivered twin is LIVE-only.** There is no operating-mode selector anywhere in the UI. The
+source is chosen by `Source:Kind`, which is required and fails fast — an unset or unrecognised
+value refuses to start. `Oracle` is the plant path. `Replay`, the simulator dataset, is **refused
+outside Development**, so no configuration mistake on the plant server can put simulated values on
+screen. The Feeder applies the same rule, with `OpcUa` as its plant source.
+
+On a development machine with no plant connection, two terminals run the replay:
 
 ```bash
 cd dotnet
-dotnet run --project src/Crm04.Api    # http://localhost:5200   (swagger at /)
+dotnet run --project src/Crm04.Api    # http://localhost:5200   (swagger at /)   Development → Replay
 dotnet run --project src/Crm04.Web    # http://localhost:5240   <- open this
 ```
 
-Start the API first. If it is not up, the dashboard shows **NO DATA** and retries every 3 seconds
-rather than failing to boot — which is the behaviour you want on a control-room screen.
+The API logs `REPLAY SOURCE SELECTED` at Warning and every value is badged **SIM**. Until a frame
+from the current connection has arrived — API down, API restarted, feed not delivering — every page
+shows **NO FEED** and draws no mill, rather than placeholder or remembered values that would read as
+a real, idle mill.
 
-### See the §7.4 degradation
+### What the live feed will show
 
-The most useful switch in the application is `Replay:Mode` in `src/Crm04.Api/appsettings.json`.
-The numbers are identical; what changes is what the twin admits about them.
+A value's badge is earned by the data, never chosen: it follows the mode its source declared,
+recorded in `FRAME.OP_MODE`. `Replay:Mode` must stay `SIMULATION` — `LIVE` is refused for a replay,
+because it would present simulator output as plant measurements with GOOD quality.
 
-```bash
-Replay__Mode=SIMULATION dotnet run --project src/Crm04.Api   # the full simulated mill
-Replay__Mode=LIVE       dotnet run --project src/Crm04.Api   # the real CRM04 extract's honesty
-```
-
-| | SIMULATION | LIVE |
+| | Development replay | Plant feed |
 |---|---|---|
 | Badges on screen | 20 SIM, 11 CALC, 7 REF | 6 LIVE, 13 CALC, 6 REF, 1 EST, **12 NO TAG** |
 | Roll force | SIM | **EST** — no force transducer; estimated from torque |

@@ -37,13 +37,48 @@ public static class Program
 
         builder.Services.AddSingleton(new OracleConnectionFactory(connectionString));
 
-        builder.Services.AddSingleton(sp =>
+        // The frame source - FAIL-FAST, with no default. The Feeder is the only process that writes
+        // into Oracle, and FRAME.OP_MODE decides how every value is badged for the rest of its life,
+        // so a silent fallback to the simulator here would put fabricated readings in the plant's
+        // own history. Replay is refused outside Development for the same reason.
+        var sourceKind = builder.Configuration["Source:Kind"]
+            ?? throw new InvalidOperationException(
+                "Source:Kind is not configured. Set it to 'OpcUa' for the plant feed.");
+
+        switch (sourceKind.Trim().ToUpperInvariant())
         {
-            var options = new ReplaySourceOptions();
-            sp.GetRequiredService<IConfiguration>().GetSection("Replay").Bind(options);
-            return options;
-        });
-        builder.Services.AddSingleton<IFrameSource, JsonlReplayFrameSource>();
+            case "OPCUA":
+                builder.Services.AddSingleton(sp =>
+                {
+                    var options = new OpcUaSourceOptions();
+                    sp.GetRequiredService<IConfiguration>().GetSection("OpcUa").Bind(options);
+                    return options;
+                });
+                builder.Services.AddSingleton<IFrameSource, OpcUaFrameSource>();
+                break;
+
+            case "REPLAY":
+                if (!builder.Environment.IsDevelopment())
+                {
+                    throw new InvalidOperationException(
+                        $"Source:Kind 'Replay' is refused in the '{builder.Environment.EnvironmentName}' " +
+                        "environment: it would write simulator output into the plant database. " +
+                        "Set Source:Kind to 'OpcUa'.");
+                }
+
+                builder.Services.AddSingleton(sp =>
+                {
+                    var options = new ReplaySourceOptions();
+                    sp.GetRequiredService<IConfiguration>().GetSection("Replay").Bind(options);
+                    return options;
+                });
+                builder.Services.AddSingleton<IFrameSource, JsonlReplayFrameSource>();
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Source:Kind '{sourceKind}' is not recognised. Expected 'OpcUa' (or 'Replay' in Development).");
+        }
 
         builder.Services.AddSingleton<TrendRollupService>();
         builder.Services.AddSingleton<RetentionService>();

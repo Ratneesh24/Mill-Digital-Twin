@@ -1,0 +1,48 @@
+@*
+    FEED STATUS - the plant feed's vital signs, on the 3D twin page.
+
+    Salvaged from the old SimulationControls panel when the simulation affordances were removed
+    for go-live. The command grid, trims and scenario list were never commands on this stack -
+    there is no in-browser solver - but this block was always real, and it matters more on a live
+    plant than it did on replay: is the feed arriving, how fast, and how old is what I am seeing.
+*@
+@using Crm04.Domain.Util
+@using Crm04.Web.Components.Common
+@using Crm04.Web.State
+@inject MillStore Mill
+@inject UiTickService Ticker
+@implements IDisposable
+
+<Panel Title="Feed">
+    <Right>
+        <span class="text-micro font-semibold tracking-wider @(Healthy ? "text-healthy" : "text-alarm")">
+            @(!Mill.HasData ? "NO FEED" : Healthy ? "HEALTHY" : "STALE")
+        </span>
+    </Right>
+    <ChildContent>
+        <DerivedRow Label="Source" Value="@(Mill.Summary?.Communication.SourceName ?? "—")" Tone="dim" />
+        <DerivedRow Label="Publish rate" Value="@(JsNumber.ToFixed(Mill.Summary?.Communication.UpdateRateHz ?? 0, 1))" Unit="Hz" Tone="dim" />
+        <DerivedRow Label="Frame age" Value="@(JsNumber.ToFixed(Mill.Summary?.Communication.AgeMs ?? 0, 0))" Unit="ms" Tone="@(Stale ? "warning" : "dim")" />
+        <DerivedRow Label="Frames received" Value="@((Mill.Summary?.Communication.FramesReceived ?? 0).ToString())" Tone="dim" />
+    </ChildContent>
+</Panel>
+
+@code {
+    private int _seen = -1;
+
+    protected override void OnInitialized() => Ticker.Tick += OnTick;
+
+    private void OnTick() => InvokeAsync(StateHasChanged);
+
+    protected override bool ShouldRender()
+    {
+        if (Mill.Version == _seen) return false;
+        _seen = Mill.Version;
+        return true;
+    }
+
+    private bool Stale => Mill.Summary?.Communication.Stale ?? true;
+    private bool Healthy => (Mill.Summary?.Communication.Connected ?? false) && !Stale;
+
+    public void Dispose() => Ticker.Tick -= OnTick;
+}

@@ -71,30 +71,6 @@ public sealed class ApiClient
     private PassSchedule? _passSchedule;
 
     /// <summary>
-    /// Ask the API to re-badge the feed.
-    ///
-    /// The cached trend catalogue is dropped because provenance is resolved PER MODE: the same
-    /// signal is SIM in simulation and ESTIMATED or NO TAG on the live-feed rules, and a stale
-    /// catalogue would keep showing the old badge beside the new numbers.
-    /// </summary>
-    public async Task<bool> SetModeAsync(OperatingMode mode, CancellationToken ct = default)
-    {
-        try
-        {
-            var response = await _http.PostAsync($"api/mode/{mode.ToWire()}", content: null, ct);
-            if (!response.IsSuccessStatusCode) return false;
-
-            _trendCatalog = null;
-            return true;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            _log.LogWarning(ex, "Mode switch to {Mode} failed.", mode);
-            return false;
-        }
-    }
-
-    /// <summary>
     /// A failed API call returns null rather than throwing.
     ///
     /// A control-room screen that throws because a chart request timed out is worse than one that

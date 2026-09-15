@@ -21,6 +21,7 @@
 @inject UiStore Ui
 @inject TagStore Tags
 @inject IJSRuntime JS
+@inject MillStore Mill
 @implements IDisposable
 
 <PageTitle>CRM04 · Real-time trends</PageTitle>
@@ -116,7 +117,15 @@
             </div>
         </Right>
         <ChildContent>
-            @if (Selected.Count == 0)
+            @* The parameter browser on the left stays usable - it is catalogue-driven - but no plot is
+               drawn until the plant feed has delivered a frame. *@
+            @if (!Mill.HasData)
+            {
+                <div class="flex min-h-[320px] flex-1 flex-col items-center justify-center p-4">
+                    <NoFeed />
+                </div>
+            }
+            else if (Selected.Count == 0)
             {
                 <div class="text-text-faint text-meta flex min-h-[320px] flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
                     <span class="text-value font-semibold">Select a parameter to trend</span>

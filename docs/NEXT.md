@@ -58,7 +58,8 @@ rejects unknown tags, guards clock skew and reconnects with backoff, but nothing
 has ever been on the other end of it. Expect the first real feed to surface tag
 naming and unit mismatches; that is what `tagDefinitions.ts` is for.
 
-**Provenance downgrade behaviour on real data.** SIM · 46-TAG rehearses it. The
+**Provenance downgrade behaviour on real data.** The former SIM · 46-TAG mode
+rehearsed it; it was removed for go-live, so the live feed is now the only test. The
 real feed will find cases the rehearsal does not — most likely tags that exist
 but are frozen, or good-quality tags with implausible values.
 

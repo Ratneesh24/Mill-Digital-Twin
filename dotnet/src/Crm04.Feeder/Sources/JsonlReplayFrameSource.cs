@@ -41,6 +41,16 @@ public sealed class JsonlReplayFrameSource : IFrameSource
         _directory = options.Directory ?? DefaultDirectory();
         _loop = options.Loop;
         Mode = WireNames.ParseOperatingMode(options.Mode);
+
+        // FRAME.OP_MODE decides how a row is badged for the rest of its life. Writing simulator
+        // output as LIVE would plant fabricated "measurements" in the plant's own history.
+        if (Mode == OperatingMode.Live)
+        {
+            throw new InvalidOperationException(
+                "Replay:Mode 'LIVE' is refused. The replay is simulator output and must not be " +
+                "recorded as plant data. Use SIMULATION.");
+        }
+
         SourceId = $"replay:{Path.GetFileName(_directory)}";
     }
 

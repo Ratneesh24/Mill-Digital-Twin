@@ -45,6 +45,28 @@ public sealed class MillStore
         }
     }
 
+    /// <summary>
+    /// Forget everything the last connection delivered.
+    ///
+    /// Called when the hub reconnects or closes. Staleness is computed by the API and carried IN
+    /// the frames, so once frames stop reaching us nothing here can age: a web process that
+    /// reconnected to a freshly restarted API with no feed kept drawing the previous mill from
+    /// memory - no NO FEED, no STALE, just old values looking current. Clearing makes the pages
+    /// fall back to NO FEED until a frame from THIS connection proves otherwise; a healthy feed
+    /// restores everything within one 100 ms tick.
+    /// </summary>
+    public void Reset()
+    {
+        lock (_gate)
+        {
+            Summary = null;
+            Alarms = [];
+            Interlocks = null;
+            HasData = false;
+            Version++;
+        }
+    }
+
     public void SetConnectionError(string? message)
     {
         lock (_gate)

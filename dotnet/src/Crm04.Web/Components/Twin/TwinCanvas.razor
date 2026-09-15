@@ -8,9 +8,9 @@
     PRERENDERING IS OFF on the page that hosts this. OnAfterRenderAsync would otherwise run
     against a canvas that does not exist yet, and init would run twice.
 
-    Overlay parity with src/components/digitalTwin/TwinOverlay.tsx: status strip, simulation
-    command strip (disabled with reason on a replay feed — there is no solver to command),
-    camera presets, zoom, label/force toggles, expand view, trends link, equipment inspector.
+    Overlay parity with src/components/digitalTwin/TwinOverlay.tsx: status strip, camera
+    presets, zoom, label/force toggles, expand view, trends link, equipment inspector. The
+    simulation command strip was removed for go-live - the twin is read-only.
 *@
 @using Crm04.Domain.Configuration
 @using Crm04.Domain.Machine
@@ -27,17 +27,23 @@
 
 <div class="twin-viewport border-line bg-base-950 relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border" @ref="_viewport">
     <div class="border-line bg-base-900 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-3 py-2">
-        <span class="status-pill @StatusPill">@StatusLabel</span>
-        <span class="text-text-faint text-micro tracking-[0.08em]">DIRECTION</span>
-        <span class="text-meta font-semibold">@DirectionArrow @Direction</span>
-        <span class="text-text-faint text-micro num">@EndsLabel</span>
+        @if (Mill.HasData)
+        {
+            <span class="status-pill @StatusPill">@StatusLabel</span>
+            <span class="text-text-faint text-micro tracking-[0.08em]">DIRECTION</span>
+            <span class="text-meta font-semibold">@DirectionArrow @Direction</span>
+            <span class="text-text-faint text-micro num">@EndsLabel</span>
+        }
+        else
+        {
+            @* Without a frame, Status and Direction fall back to Idle / Forward - which printed
+               "IDLE · FORWARD · ETR → DTR", a confident description of a mill nobody can see. *@
+            <span class="status-pill status-pill-trip text-alarm">NO FEED</span>
+        }
 
-        <span class="flex-1"></span>
-        <span class="text-prov-simulated text-micro font-semibold tracking-[0.08em]">SIMULATION CONTROL</span>
-        <button type="button" class="twin-cmd" disabled title="Replay feed — the mill follows the API, there is nothing to start."><Icon Name="Play" Size="13" /> START</button>
-        <button type="button" class="twin-cmd" disabled title="Replay feed — nothing to stop."><Icon Name="Square" Size="13" /> STOP</button>
-        <button type="button" class="twin-cmd twin-cmd-trip" disabled title="Replay feed — nothing to fast-stop.">FAST STOP</button>
-        <button type="button" class="twin-cmd" disabled title="Replay feed — nothing to reset."><Icon Name="RotateCcw" Size="13" /> RESET</button>
+        @* The SIMULATION CONTROL strip (START / STOP / FAST STOP / RESET) was removed for go-live.
+           It was always disabled - the twin is read-only and there is no solver to command - but it
+           still printed the word SIMULATION on a live plant screen. *@
     </div>
 
     <div class="border-line bg-base-850 flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5">
@@ -68,13 +74,22 @@
        break the label positioning - it is the one rule this component must not lose. *@
     <div class="twin-stage">
         <canvas @ref="_canvas" class="twin-canvas" aria-label="Interactive rolling mill. Drag to orbit, scroll or pinch to zoom."></canvas>
-        <div class="twin-labels" @ref="_overlay">
+        @* Hidden, not removed, with no feed: JavaScript positions this DOM every frame, so tearing it
+           out and back in would orphan the projector's references. And hidden at all because each
+           label would read NO TAG - which means "this feed does not carry the tag", a claim about a
+           feed that does not exist yet. Hidden by OPACITY: see .twin-labels-off in app.css for why
+           visibility:hidden did not work. *@
+        <div class="twin-labels @(Mill.HasData ? "" : "twin-labels-off")" @ref="_overlay">
             <TwinLabels />
         </div>
 
-        @if (_stalled is not null)
+        @* The same curtain covers "no frame has ever arrived". The scene would otherwise show a
+           mill posed from placeholder values - idle, rolls at rest - which looks like a real one. *@
+        @if (_stalled is not null || !Mill.HasData)
         {
-            <div class="twin-stall" role="status">@_stalled</div>
+            <div class="twin-stall" role="status">
+                @(_stalled ?? "NO FEED — the plant feed has not delivered a frame. This scene is not showing machine state.")
+            </div>
         }
         @if (_error is not null)
         {
