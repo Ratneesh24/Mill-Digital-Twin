@@ -7,3 +7,8 @@ node_modules/.tmp
 .DS_Store
 *.log
 .claude/
+
+# Offline NuGet install on an air-gapped server (see dotnet/offline/READ-ME-FIRST.txt).
+# The instructions are committed; the 135 MB of packages and the extracted cache are not.
+dotnet/offline-packages/
+dotnet/packages-cache/

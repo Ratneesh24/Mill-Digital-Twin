@@ -72,6 +72,12 @@ dotnet build
 dotnet test
 ```
 
+**No internet on the build machine?** Every one of these commands restores from nuget.org first
+and dies with `NU1301` if it cannot. See `offline/READ-ME-FIRST.txt`: drop the supplied
+`*.nupkg` files in `dotnet/offline-packages/` and `offline/nuget.config` in `dotnet/`, and the
+restore resolves locally. Node is not required either — `wwwroot/css/app.css` is committed and
+the Tailwind step is `ContinueOnError` (`-p:SkipClientAssets=true` skips it outright).
+
 `TreatWarningsAsErrors` is on solution-wide. The TypeScript app ships with zero errors under
 `strict` and treats that as a release gate; the C# side keeps the same bar, and nullable reference
 types are load-bearing here because `null` means "no tag on this feed" rather than zero.

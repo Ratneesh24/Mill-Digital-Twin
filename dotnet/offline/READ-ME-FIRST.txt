@@ -1,0 +1,93 @@
+CRM04 DIGITAL TWIN - OFFLINE NUGET PACKAGES
+===========================================
+
+WHY YOU GOT THIS FOLDER
+-----------------------
+On the server you ran:
+
+    dotnet run --project src/Crm04.Feeder -- --check-db
+
+and got:
+
+    error NU1301: Unable to load the service index for source
+                  https://api.nuget.org/v3/index.json
+
+That is not a database or code problem. Every .NET build starts by RESTORING its
+NuGet dependencies from the internet, and JLD2SRV19913 is blocked from reaching
+nuget.org. The build fails before it ever tries to contact Oracle.
+
+This folder contains all 160 packages the solution needs - the direct ones and, just
+as important, every transitive dependency they pull in. Point the build at this
+folder and the restore succeeds with no internet at all.
+
+
+INSTALL - 3 STEPS, ONCE
+-----------------------
+Assuming the code is at  D:\Mill-Digital-Twin-main\Mill-Digital-Twin-main\dotnet\
+
+1. Create the folder and copy the .nupkg files into it:
+
+       D:\Mill-Digital-Twin-main\Mill-Digital-Twin-main\dotnet\offline-packages\
+
+   (all 160 *.nupkg files from this folder, flat - no subfolders)
+
+2. Copy  nuget.config  from this folder into:
+
+       D:\Mill-Digital-Twin-main\Mill-Digital-Twin-main\dotnet\
+
+   It must sit next to Crm04.sln. Do NOT put it inside offline-packages.
+
+3. Verify:
+
+       cd D:\Mill-Digital-Twin-main\Mill-Digital-Twin-main\dotnet
+       dotnet restore
+
+   Expected: "Restored ..." for all 10 projects, and NO NU1301.
+
+   (This exact sequence was rehearsed on a clean tree with nuget.org disabled before
+   this folder was sent: 10/10 restored, then Crm04.Feeder and Crm04.Web both built
+   Release with no network and no Node installed.)
+
+That is it. dotnet run / build / test / publish now all work offline.
+
+
+THEN CONTINUE WITH THE ORIGINAL COMMANDS
+----------------------------------------
+    cd D:\Mill-Digital-Twin-main\Mill-Digital-Twin-main\dotnet
+    dotnet run --project src/Crm04.Feeder -- --check-db
+    dotnet run --project src/Crm04.Feeder -- --apply-ddl
+
+--check-db is READ-ONLY. It reports the Oracle banner, the CRM04 schema, granted
+privileges, whether the Partitioning option is licensed, and tablespace free space.
+It exits non-zero and names whatever is missing. Fix that before --apply-ddl.
+
+
+NOTES
+-----
+* .NET 8 SDK is required on the server (you already have it - the first-run banner
+  appeared in your terminal). No other installer is needed.
+
+* Node.js / npm is NOT required. The Tailwind CSS step is marked ContinueOnError and
+  the compiled wwwroot/css/app.css is committed, so a Node-less machine still builds
+  a correct binary. To skip that step silently, add:
+      -p:SkipClientAssets=true
+
+* After <clear /> in nuget.config, a genuinely missing package reports NU1101
+  ("unable to find package X") and names it - not a network timeout. If that ever
+  happens, send us the package id and version and we will add it to this folder.
+
+* Do not delete this folder after the first build. NuGet re-reads it on every
+  restore, including after a clean or a code update.
+
+* If you move the code to a different path, nothing changes: nuget.config resolves
+  "offline-packages" relative to its own location, on any drive.
+
+
+HOW THIS FOLDER WAS PRODUCED (to refresh it later, on a connected PC)
+--------------------------------------------------------------------
+    dotnet restore dotnet\Crm04.sln --packages C:\pk
+    Get-ChildItem C:\pk -Recurse -Filter *.nupkg |
+        ForEach-Object { Copy-Item $_.FullName -Destination <this folder> -Force }
+
+Use a SHORT path like C:\pk. Under a long path the OPC UA package names exceed the
+Windows 260-character limit and several packages are silently skipped.
