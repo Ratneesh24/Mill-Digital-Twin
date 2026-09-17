@@ -42,8 +42,8 @@ would stop being structurally true.
 - .NET 8 SDK (`dotnet --list-sdks` must show 8.0.4xx; pinned by `global.json`)
 - Node 20+ for the export scripts and, from M4, the Tailwind/esbuild client build
 - Oracle: connection string supplied via user-secrets or `ConnectionStrings__Crm04`. Never in
-  `appsettings.json`. **Confirm the edition and whether Partitioning is licensed before M2** —
-  the schema prefers index-organized tables (always available) and interval partitioning (not).
+  `appsettings.json`. The schema targets **Standard Edition** and uses no licensed options —
+  index-organized tables only. `mill4db` answered ORA-00439 for Partitioning, so it is not used.
 
 ## Generated files — regenerate, never hand-edit
 
@@ -119,9 +119,10 @@ The API reads it with `Source:Kind` = `Oracle`, which is what `src/Crm04.Api/app
 ships. In Development, `appsettings.Development.json` overrides that to `Replay`; set
 `Source__Kind=Oracle` to develop against this database instead.
 
-`--check-db` reports the banner, schema, whether Partitioning is licensed, the privileges the
-session holds and the free space — run it first on any new environment. The schema branches on
-Partitioning, and finding out after writing migrations is a slow way to learn.
+`--check-db` reports the banner, schema, the privileges the session holds and the free space —
+run it first on any new environment. It deliberately does **not** gate on Partitioning: the
+schema no longer uses it, and the old check could not tell "unlicensed" from "no privilege to
+ask", so it passed on a database where `--apply-ddl` then failed with ORA-00439.
 
 Other commands: `--seed-only` (refresh TAG_DEF alone), `--drop-all --yes` (destroy everything;
 the second flag is required so it cannot happen from a shell history).
@@ -133,7 +134,7 @@ three different physical structures, so there are three:
 
 | Table | Shape | Because |
 |---|---|---|
-| `TAG_SAMPLE` | **index-organized**, PK `(FRAME_ID, TAG_ID)`, interval-partitioned | one frame's 108 rows are physically contiguous — reading a frame is one range scan with **zero** table lookups |
+| `TAG_SAMPLE` | **index-organized**, PK `(FRAME_ID, TAG_ID)` | one frame's 108 rows are physically contiguous — reading a frame is one range scan with **zero** table lookups |
 | `CURRENT_TAG` | 122 rows, IOT, MERGE'd per frame | a new client gets a full snapshot without hunting for the latest frame |
 | `TREND_SAMPLE` | pre-bucketed 1 s / 5 s / 15 s, IOT | **the trend page never touches the 10 Hz table** — a 1-hour chart is ≤240 rows, not 36,000 |
 
@@ -157,16 +158,21 @@ double and the JavaScript number it came from. `NUMBER` is decimal and would rou
 
 ### Retention
 
-Partitioning is licensed on this database, so retention is a **metadata operation**: `FRAME` and
-`TAG_SAMPLE` are interval-partitioned on `FRAME_ID` with identical 36,000-frame boundaries (one
-hour at 10 Hz), and one cutoff drops matching partitions from both. Instant, no redo storm, never
-blocks the writer.
+Partitioning is **not available** on this database (ORA-00439), so retention is a chunked
+`DELETE`: 50,000 rows per statement, `TAG_SAMPLE` before `FRAME`, capped at 30 s per pass and run
+once a minute. `FRAME_ID` leads the primary key of both tables, so every chunk is an index range
+scan rather than a full scan.
 
-That shared partition key is also why there is deliberately **no foreign key** between them: an
-enabled FK would refuse to let the parent partition go. Both are written in one transaction, so
-the relationship holds by construction.
+**Unlike a partition drop, this can fall behind.** Roughly 65,000 `TAG_SAMPLE` rows a minute have
+to go just to stand still. A pass that ends on its time budget logs a Warning naming the cutoff it
+could not reach — that warning is the only symptom before the tablespace fills, so do not filter
+it out.
 
-Default window is 2 hours (`Retention:Hours`) — about 7.8M rows / 310 MB, flat.
+There is deliberately **no foreign key** from `TAG_SAMPLE` to `FRAME`: the check would run 1,080
+times a second to enforce what the writer already guarantees by inserting both in one transaction.
+
+Default window is 2 hours (`Retention:Hours`) — about 7.8M rows / 310 MB. Deleted space is reused
+by later inserts because `FRAME_ID` only increases, so the segment plateaus rather than shrinking.
 
 ## Running it on localhost
 

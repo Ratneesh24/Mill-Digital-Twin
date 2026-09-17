@@ -1,7 +1,9 @@
 -- =====================================================================
 -- CRM04 DIGITAL TWIN — SCHEMA
 --
--- Target: Oracle with the Partitioning option licensed (confirmed).
+-- Target: Oracle WITHOUT the Partitioning option, i.e. Standard Edition or an Enterprise
+-- Edition that has not licensed it. mill4db answered ORA-00439 to the first INTERVAL clause,
+-- so nothing here may use partitioning, and 02_indexes.sql may not declare a LOCAL index.
 -- Run as the CRM04 application schema (mill4), not as SYS.
 --
 -- THE LOAD THIS IS SHAPED FOR
@@ -68,10 +70,11 @@ CREATE TABLE TAG_DEF (
 -- FRAME — one row per published instant. The only table the API's poller reads to
 -- decide whether anything new has happened.
 --
--- Interval-partitioned on FRAME_ID at 36,000 frames per partition, which is one hour at 10 Hz.
--- Partitioning on the sequence rather than on time so that TAG_SAMPLE — an index-organized
--- table whose partition key MUST be a subset of its primary key — can use the same boundaries.
--- Retention then drops matching partitions from both tables with one cutoff.
+-- Not partitioned — the option is not available here. FRAME_ID is still the retention key: it
+-- comes from a sequence and so increases monotonically with time, which makes "older than N
+-- hours" a range scan on the primary key of this table and on the leading column of
+-- TAG_SAMPLE's. One cutoff therefore still serves both tables; it is now a DELETE rather than
+-- a DROP PARTITION. See RetentionService.
 -- ---------------------------------------------------------------------
 CREATE SEQUENCE FRAME_SEQ START WITH 1 INCREMENT BY 1 CACHE 1000 NOORDER NOCYCLE;
 
@@ -89,10 +92,7 @@ CREATE TABLE FRAME (
   -- misread as "many tags are absent from this feed", which would look like a §7.4 degradation.
   TAG_COUNT  NUMBER(4)    NOT NULL,
   CONSTRAINT PK_FRAME PRIMARY KEY (FRAME_ID)
-)
-PARTITION BY RANGE (FRAME_ID)
-INTERVAL (36000)
-( PARTITION P_FRAME_INIT VALUES LESS THAN (1) );
+);
 
 
 -- ---------------------------------------------------------------------
@@ -104,11 +104,13 @@ INTERVAL (36000)
 -- No overflow segment is declared: the widest possible row is about 90 bytes against a
 -- PCTTHRESHOLD of 50% of an 8K block, so nothing can approach the limit.
 --
--- NOTE THE ABSENT FOREIGN KEY TO FRAME. Retention drops partitions rather than deleting rows,
--- and an enforced FK would block dropping a parent partition. Both tables are partitioned on
--- FRAME_ID with identical boundaries and the writer inserts into both in one transaction, so
--- the relationship is maintained by construction. The FK to TAG_DEF stays — that table is 122
--- static, fully-cached rows, and the check costs nothing.
+-- NOTE THE ABSENT FOREIGN KEY TO FRAME. Still deliberate, but NO LONGER for the original reason
+-- (an enabled FK refusing to let a parent partition be dropped — there are no partitions now).
+-- The reason today is cost: the check would run 1,080 times a second on the insert path to
+-- enforce something the writer already guarantees, since it inserts the header and its samples
+-- in one transaction. Retention deletes TAG_SAMPLE before FRAME, so the ordering an FK would
+-- demand is honoured anyway. The FK to TAG_DEF stays — that table is 122 static, fully-cached
+-- rows, and the check costs nothing.
 -- ---------------------------------------------------------------------
 CREATE TABLE TAG_SAMPLE (
   FRAME_ID   NUMBER(19)   NOT NULL,
@@ -130,10 +132,7 @@ CREATE TABLE TAG_SAMPLE (
   CONSTRAINT PK_TAG_SAMPLE PRIMARY KEY (FRAME_ID, TAG_ID),
   CONSTRAINT FK_SAMPLE_TAG FOREIGN KEY (TAG_ID) REFERENCES TAG_DEF (TAG_ID)
 )
-ORGANIZATION INDEX
-PARTITION BY RANGE (FRAME_ID)
-INTERVAL (36000)
-( PARTITION P_SAMPLE_INIT VALUES LESS THAN (1) );
+ORGANIZATION INDEX;
 
 
 -- ---------------------------------------------------------------------
@@ -155,7 +154,7 @@ CREATE TABLE CURRENT_TAG (
 ) ORGANIZATION INDEX;
 
 -- One row, enforced by the check constraint, so "what is the latest frame" is an atomic read
--- rather than a MAX() over a partitioned table.
+-- rather than a MAX() over the 10 Hz history table.
 CREATE TABLE CURRENT_FRAME (
   ONLY_ROW   NUMBER(1)    NOT NULL
     CONSTRAINT CK_CURFRAME_SINGLETON CHECK (ONLY_ROW = 1),

@@ -12,3 +12,7 @@ node_modules/.tmp
 # The instructions are committed; the 135 MB of packages and the extracted cache are not.
 dotnet/offline-packages/
 dotnet/packages-cache/
+# Activating the offline feed means copying dotnet/offline/nuget.config up to dotnet/.
+# That copy is machine-local: committing it would point every other clone at a folder
+# that is not in the repo, turning their restore into NU1101.
+dotnet/nuget.config

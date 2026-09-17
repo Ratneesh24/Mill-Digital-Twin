@@ -1,38 +1,68 @@
 using System.Data;
+using System.Diagnostics;
 using Oracle.ManagedDataAccess.Client;
-using Oracle.ManagedDataAccess.Types;
 
 namespace Crm04.Persistence.Maintenance;
 
-public sealed record RetentionResult(long CutoffFrameId, int FramePartitionsDropped, int SamplePartitionsDropped);
+/// <param name="CutoffFrameId">Frames at or below this id are older than the retention window.</param>
+/// <param name="FrameRowsDeleted">Rows removed from FRAME this pass.</param>
+/// <param name="SampleRowsDeleted">Rows removed from TAG_SAMPLE this pass.</param>
+/// <param name="ReachedCutoff">
+/// False when the pass ran out of time budget with rows still below the cutoff. The caller MUST
+/// surface this: it is the only signal that retention is losing the race against the writer.
+/// </param>
+public sealed record RetentionResult(
+    long CutoffFrameId,
+    int FrameRowsDeleted,
+    int SampleRowsDeleted,
+    bool ReachedCutoff);
 
 /// <summary>
 /// Keeps TAG_SAMPLE from filling the tablespace.
 ///
-/// At 1,080 rows/second the table grows by ~155 MB an hour and ~93M rows a day. With the
-/// Partitioning option licensed — confirmed for this database — retention is a metadata
-/// operation: DROP PARTITION returns instantly, generates no redo storm, and never blocks the
-/// writer. The alternative on an unlicensed database is a chunked DELETE loop, which works but
-/// spends real I/O doing it.
+/// At 1,080 rows/second the table grows by ~155 MB an hour and ~93M rows a day.
 ///
-/// Both FRAME and TAG_SAMPLE are interval-partitioned on FRAME_ID with the same 36,000-frame
-/// boundaries (one hour at 10 Hz), so one cutoff drops matching partitions from both. That
-/// shared key is also why there is no enforced foreign key between them: an enabled FK would
-/// refuse to let the parent partition go.
+/// This database does NOT have the Partitioning option (confirmed by ORA-00439 on the first
+/// --apply-ddl against mill4db), so retention is a chunked DELETE rather than a DROP PARTITION.
+/// That distinction is not academic:
+///
+///   DROP PARTITION was a metadata operation - instant, no redo, and it COULD NOT FALL BEHIND.
+///   A DELETE can. Each minute's pass has to clear roughly 65,000 TAG_SAMPLE rows just to stand
+///   still, and if it stops keeping up nothing else in the system notices until the tablespace
+///   is full. <see cref="RetentionResult.ReachedCutoff"/> exists solely to make that visible.
+///
+/// The delete is cheap despite the volume because TAG_SAMPLE is an index-organized table whose
+/// primary key is (FRAME_ID, TAG_ID): FRAME_ID leads, so `WHERE FRAME_ID &lt;= :cutoff` is an
+/// index range scan over physically contiguous rows, not a full scan.
+///
+/// Space is reclaimed but not returned to the OS. The segment settles at its high-water mark;
+/// because FRAME_ID only ever increases, emptied leaf blocks are reused by new inserts, so the
+/// size plateaus (~310 MB at the default 2-hour window) rather than growing without bound.
 /// </summary>
 public sealed class RetentionService
 {
+    /// <summary>
+    /// Rows per DELETE. ODP.NET auto-commits each statement when no explicit transaction is
+    /// open, so this is also the commit interval - small enough to keep undo modest and to
+    /// never hold a long lock against the 10 Hz writer.
+    /// </summary>
+    private const int ChunkRows = 50_000;
+
+    /// <summary>
+    /// Wall-clock cap for one pass. Retention runs once a minute and must never monopolise the
+    /// connection; whatever is left is picked up on the next tick, and the shortfall is reported.
+    /// </summary>
+    private static readonly TimeSpan PassBudget = TimeSpan.FromSeconds(30);
+
     private readonly OracleConnectionFactory _factory;
 
     public RetentionService(OracleConnectionFactory factory) => _factory = factory;
 
     /// <summary>
-    /// Drop every partition holding frames older than <paramref name="retention"/>.
+    /// Delete every frame, and every sample of it, older than <paramref name="retention"/>.
     ///
     /// The cutoff is found in FRAME by EPOCH_MS and then applied as a FRAME_ID, because that is
-    /// the partition key. A partition is dropped only when its entire range is below the cutoff -
-    /// the high-value bound is exclusive, so a partition whose bound is at or below the cutoff
-    /// frame contains nothing newer.
+    /// the column both tables are keyed on and the only one indexed in both.
     /// </summary>
     public async Task<RetentionResult> ApplyAsync(TimeSpan retention, CancellationToken ct = default)
     {
@@ -44,18 +74,31 @@ public sealed class RetentionService
             "SELECT NVL(MAX(FRAME_ID), 0) FROM FRAME WHERE EPOCH_MS < :cutoff",
             ("cutoff", OracleDbType.Int64, cutoffMs), ct);
 
-        if (cutoffFrameId <= 0) return new RetentionResult(0, 0, 0);
+        if (cutoffFrameId <= 0) return new RetentionResult(0, 0, 0, ReachedCutoff: true);
 
-        var framesDropped = await DropPartitionsBelowAsync(connection, "FRAME", cutoffFrameId, ct);
-        var samplesDropped = await DropPartitionsBelowAsync(connection, "TAG_SAMPLE", cutoffFrameId, ct);
+        var budget = Stopwatch.StartNew();
 
-        return new RetentionResult(cutoffFrameId, framesDropped, samplesDropped);
+        // TAG_SAMPLE FIRST, and FRAME only if it finished. TAG_SAMPLE is ~108x the rows, so it is
+        // what actually threatens the tablespace and it gets the budget. Deleting the headers
+        // first would also leave samples whose frame is gone, which reads as data that cannot be
+        // explained; orphaned FRAME headers are merely invisible and go on the next pass.
+        var (sampleRows, samplesDone) =
+            await DeleteBelowAsync(connection, "TAG_SAMPLE", cutoffFrameId, budget, ct);
+
+        var frameRows = 0;
+        var framesDone = false;
+        if (samplesDone)
+        {
+            (frameRows, framesDone) =
+                await DeleteBelowAsync(connection, "FRAME", cutoffFrameId, budget, ct);
+        }
+
+        return new RetentionResult(cutoffFrameId, frameRows, sampleRows, samplesDone && framesDone);
     }
 
     /// <summary>
-    /// Trend retention, which is a delete rather than a partition drop: TREND_SAMPLE is small
-    /// (a few million rows at most) and its rows are addressed by bucket size, not by time range,
-    /// so partitioning it would buy nothing.
+    /// Trend retention. TREND_SAMPLE is small (a few million rows at most) and its rows are
+    /// addressed by bucket size, not by frame, so it gets its own unchunked delete.
     ///
     /// The finer buckets expire first. A one-second bucket is only interesting while someone is
     /// watching the last few minutes; after an hour the fifteen-second series says everything the
@@ -89,121 +132,42 @@ public sealed class RetentionService
     }
 
     /// <summary>
-    /// Drop the partitions of one interval-partitioned table whose whole range sits below the
-    /// cutoff. The first partition is never dropped - Oracle requires an interval-partitioned
-    /// table to keep at least one range partition, and P_*_INIT is the anchor the intervals are
-    /// measured from.
+    /// Delete rows at or below the cutoff in committed chunks until the table is clear or the
+    /// pass budget expires.
     /// </summary>
-    private static async Task<int> DropPartitionsBelowAsync(
-        OracleConnection connection, string tableName, long cutoffFrameId, CancellationToken ct)
+    /// <returns>
+    /// Rows deleted, and whether the cutoff was actually reached. A false second element means
+    /// there is still old data in the table - the caller is expected to complain about it.
+    /// </returns>
+    private static async Task<(int Deleted, bool ReachedCutoff)> DeleteBelowAsync(
+        OracleConnection connection,
+        string tableName,
+        long cutoffFrameId,
+        Stopwatch budget,
+        CancellationToken ct)
     {
-        var toDrop = new List<string>();
+        var total = 0;
 
-        await using (var cmd = new OracleCommand(
-            """
-            SELECT partition_name, high_value_json
-              FROM user_tab_partitions
-             WHERE table_name = :t
-               AND partition_position > 1
-             ORDER BY partition_position
-            """,
-            connection)
-        { BindByName = true })
+        while (true)
         {
-            cmd.Parameters.Add(":t", OracleDbType.Varchar2, tableName, ParameterDirection.Input);
+            if (budget.Elapsed >= PassBudget) return (total, false);
 
-            try
-            {
-                await using var reader = await cmd.ExecuteReaderAsync(ct);
-                while (await reader.ReadAsync(ct))
-                {
-                    var name = reader.GetString(0);
-                    var highValue = reader.IsDBNull(1) ? null : reader.GetString(1);
-                    if (TryParseHighValue(highValue, out var bound) && bound <= cutoffFrameId)
-                    {
-                        toDrop.Add(name);
-                    }
-                }
-            }
-            catch (OracleException ex) when (ex.Number == 904)
-            {
-                // HIGH_VALUE_JSON is 21c+. On an older release fall back to the LONG column,
-                // which cannot be read through a normal reader - handled below.
-                toDrop.AddRange(await LegacyHighValueScanAsync(connection, tableName, cutoffFrameId, ct));
-            }
+            // tableName is one of two compile-time literals from ApplyAsync, never external input.
+            // ChunkRows is a constant rather than a bind variable so the optimiser costs the
+            // ROWNUM stop key rather than guessing at it.
+            await using var cmd = new OracleCommand(
+                $"DELETE FROM {tableName} WHERE FRAME_ID <= :cutoff AND ROWNUM <= {ChunkRows}",
+                connection)
+            { BindByName = true };
+
+            cmd.Parameters.Add(":cutoff", OracleDbType.Int64, cutoffFrameId, ParameterDirection.Input);
+
+            var rows = await cmd.ExecuteNonQueryAsync(ct);
+            total += rows;
+
+            // A short chunk means the WHERE clause ran out of rows, not that the chunk was capped.
+            if (rows < ChunkRows) return (total, true);
         }
-
-        foreach (var partition in toDrop)
-        {
-            await using var drop = new OracleCommand(
-                $"ALTER TABLE {tableName} DROP PARTITION {partition} UPDATE INDEXES", connection);
-            await drop.ExecuteNonQueryAsync(ct);
-        }
-
-        return toDrop.Count;
-    }
-
-    /// <summary>
-    /// Pre-21c fallback. USER_TAB_PARTITIONS.HIGH_VALUE is a LONG, which ODP.NET cannot read
-    /// through an ordinary reader, so a small PL/SQL block converts it to a string first.
-    /// </summary>
-    private static async Task<List<string>> LegacyHighValueScanAsync(
-        OracleConnection connection, string tableName, long cutoffFrameId, CancellationToken ct)
-    {
-        var names = new List<string>();
-
-        await using var cmd = new OracleCommand(
-            """
-            DECLARE
-              CURSOR c IS
-                SELECT partition_name, high_value
-                  FROM user_tab_partitions
-                 WHERE table_name = :t AND partition_position > 1
-                 ORDER BY partition_position;
-              v_names SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
-              v_bound NUMBER;
-            BEGIN
-              FOR r IN c LOOP
-                BEGIN
-                  v_bound := TO_NUMBER(r.high_value);
-                  IF v_bound <= :cutoff THEN
-                    v_names.EXTEND;
-                    v_names(v_names.COUNT) := r.partition_name;
-                  END IF;
-                EXCEPTION WHEN OTHERS THEN NULL;
-                END;
-              END LOOP;
-              OPEN :result FOR SELECT column_value FROM TABLE(v_names);
-            END;
-            """,
-            connection)
-        { BindByName = true };
-
-        cmd.Parameters.Add(":t", OracleDbType.Varchar2, tableName, ParameterDirection.Input);
-        cmd.Parameters.Add(":cutoff", OracleDbType.Int64, cutoffFrameId, ParameterDirection.Input);
-        var cursor = cmd.Parameters.Add(":result", OracleDbType.RefCursor);
-        cursor.Direction = ParameterDirection.Output;
-
-        await cmd.ExecuteNonQueryAsync(ct);
-
-        await using var reader = ((OracleRefCursor)cursor.Value).GetDataReader();
-        while (await reader.ReadAsync(ct)) names.Add(reader.GetString(0));
-
-        return names;
-    }
-
-    /// <summary>
-    /// An interval partition's high value is a bare number for a NUMBER partition key, sometimes
-    /// wrapped in JSON on 21c+. Anything unparseable is left alone - refusing to drop a partition
-    /// we do not understand is the safe direction.
-    /// </summary>
-    internal static bool TryParseHighValue(string? highValue, out long bound)
-    {
-        bound = 0;
-        if (string.IsNullOrWhiteSpace(highValue)) return false;
-
-        var digits = new string(highValue.Where(char.IsAsciiDigit).ToArray());
-        return digits.Length > 0 && long.TryParse(digits, out bound);
     }
 
     private static async Task<long> ScalarAsync(

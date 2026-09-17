@@ -7,7 +7,6 @@ namespace Crm04.Persistence;
 public sealed record DatabaseFacts(
     string Banner,
     string SchemaName,
-    string? Edition,
     IReadOnlyList<string> Options,
     IReadOnlyList<string> Privileges,
     IReadOnlyList<string> MissingPrivileges,
@@ -21,10 +20,14 @@ public sealed record DatabaseFacts(
 /// Asks the database what it is and what it will let us do, before any DDL is written against
 /// assumptions.
 ///
-/// This is not ceremony. The schema design branches on two facts that cannot be guessed from a
-/// connection string: whether Partitioning is licensed (which decides whether retention is an
-/// instant DROP PARTITION or a chunked DELETE loop), and whether the schema owner can actually
-/// CREATE TABLE. Finding out after writing the migrations is a slow way to learn.
+/// This is not ceremony: whether the schema owner can actually CREATE TABLE, and how much free
+/// space there is, cannot be guessed from a connection string.
+///
+/// What it must NOT be trusted for is licensing. Options are read from v$option, which an
+/// application schema usually cannot select from, and TryListAsync turns that ORA-00942 into an
+/// empty list - so "not licensed" and "not allowed to ask" arrive here as the same answer. This
+/// is exactly how an --apply-ddl that later failed with ORA-00439 got a clean bill of health.
+/// The schema is now written to need no options at all, which is the only robust fix.
 /// </summary>
 public static class DatabaseProbe
 {
@@ -47,9 +50,12 @@ public static class DatabaseProbe
         // v$version and v$option need SELECT on the dynamic views, which a plain application
         // schema often lacks. Not being able to ask is not a failure - it just means we cannot
         // confirm, and the caller is told that rather than being given a wrong answer.
-        var edition = await TryScalarAsync<string>(connection,
-            "SELECT SYS_CONTEXT('USERENV','EDITION_NAME') FROM dual", ct);
-
+        //
+        // There is deliberately NO Enterprise-vs-Standard probe. The obvious candidate was here
+        // and was simply wrong: SYS_CONTEXT('USERENV','EDITION_NAME') returns the Edition-Based
+        // Redefinition edition (ORA$BASE on every ordinary database) and says nothing whatever
+        // about the licence. It was never printed, so it misled quietly. The schema no longer
+        // branches on Partitioning, so nothing needs the answer.
         var options = await TryListAsync(connection,
             "SELECT parameter FROM v$option WHERE value = 'TRUE' ORDER BY parameter", ct);
 
@@ -73,7 +79,6 @@ public static class DatabaseProbe
         return new DatabaseFacts(
             Banner: banner,
             SchemaName: schema,
-            Edition: string.IsNullOrWhiteSpace(edition) ? null : edition,
             Options: options,
             Privileges: privileges,
             MissingPrivileges: missing,

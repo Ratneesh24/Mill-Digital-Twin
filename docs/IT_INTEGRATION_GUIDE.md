@@ -93,12 +93,15 @@ Those four are exactly what the Feeder's `--check-db` verifies.
 
 ### 3.2 Things the DBA must know
 
-- **Partitioning.** `db/ddl/01_tables.sql` uses `INTERVAL` partitioning on `FRAME` and
-  `TAG_SAMPLE`. If the Partitioning option is **not licensed**, that script fails — tell the
-  developer before running it.
+- **No Oracle options required.** An earlier version of this schema used `INTERVAL` partitioning
+  and failed here with **ORA-00439: feature not enabled: Partitioning**. It no longer uses
+  partitioning, `LOCAL` indexes, compression or any other licensed feature, and runs on Standard
+  Edition. Nothing needs to be purchased or enabled.
 - **Write rate.** ~108 tags × 10 Hz ≈ **1,080 rows/second**, ~155 MB/hour before retention.
-- **Retention.** Default 2 hours of raw samples (~7.8 M rows / ~310 MB, stays flat). Change with
-  `Retention:Hours` in `Crm04.Feeder/appsettings.json`. Old partitions are dropped, not deleted.
+- **Retention.** Default 2 hours of raw samples (~7.8 M rows / ~310 MB). Change with
+  `Retention:Hours` in `Crm04.Feeder/appsettings.json`. Rows are **deleted** in 50,000-row chunks
+  once a minute. Deleted space is reused by later inserts, so the tables plateau rather than
+  shrink — budget for ~310 MB steady state, not for it returning to zero.
 - **Tables created:** `TAG_DEF`, `FRAME` (+ `FRAME_SEQ`), `TAG_SAMPLE`, `CURRENT_TAG`,
   `CURRENT_FRAME`, `TREND_SAMPLE`, `ALARM_EVENT`, `MACHINE_EVENT`, `COIL`, `PASS_SCHEDULE`,
   `PASS_SCHEDULE_ENTRY`. The DDL is plain SQL in `dotnet/db/ddl/` and can be reviewed without .NET.
@@ -144,7 +147,7 @@ User Id=CRM04;Password=CRM04@123;Data Source=132.147.244.24:1521/mill4db;
 
 ```bash
 cd dotnet
-dotnet run --project src/Crm04.Feeder -- --check-db     # banner, schema, privileges, Partitioning, free space
+dotnet run --project src/Crm04.Feeder -- --check-db     # banner, schema, privileges, free space
 dotnet run --project src/Crm04.Feeder -- --apply-ddl    # creates tables + indexes, seeds TAG_DEF (122 tags)
 ```
 
@@ -547,7 +550,8 @@ Run each as a Windows service (`sc create`, NSSM, or IIS for Api/Web). Copy
 | Feeder: `Source:Kind … refused in the 'Production' environment` | `Source:Kind` is `Replay`. Must be `OpcUa`. |
 | API: `TAG_DEF is empty` | `--apply-ddl` not run against this database. |
 | Feeder: `MISSING PRIVILEGES` | DBA grants from §3.1. |
-| DDL fails on `INTERVAL` | Partitioning not licensed — tell the developer. |
+| DDL fails with **ORA-00439** (Partitioning) or **ORA-14016** (LOCAL index) | An outdated copy of `db/ddl/`. The shipped schema uses neither. Re-pull the code, then `--drop-all --yes` and `--apply-ddl` again — the failed run leaves the schema half-built. |
+| Feeder: `Retention did not reach frame …` | Retention is losing the race against the feed and `TAG_SAMPLE` is growing. Lower `Retention:Hours`, or investigate database write performance. Do not ignore it — the tablespace will fill. |
 | Feeder: `BadCertificateUntrusted` / `BadSecurityChecksFailed` | Trust the Feeder in Kepware (§4.3), and put Kepware's server cert in `pki/trusted`. |
 | Many readouts **NO TAG** | Wrong `NodeIdPrefix` or `ns=` index (§4.4), or rows with an empty `TwinTag`. |
 | A value is plausible but wrong | A `REVIEW` row in the CSV (§5) — reel identity, torque base, units. |

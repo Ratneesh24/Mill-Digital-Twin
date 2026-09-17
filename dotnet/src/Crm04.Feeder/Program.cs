@@ -136,7 +136,7 @@ public static class Program
 
         Console.WriteLine($"  banner      : {facts.Banner}");
         Console.WriteLine($"  schema      : {facts.SchemaName}");
-        Console.WriteLine($"  partitioning: {(facts.HasPartitioning ? "LICENSED" : "not reported by v$option")}");
+        Console.WriteLine($"  partitioning: not required by this schema{(facts.HasPartitioning ? " (licensed here, unused)" : "")}");
         Console.WriteLine($"  privileges  : {(facts.Privileges.Count == 0 ? "(session_privs not readable)" : string.Join(", ", facts.Privileges))}");
         Console.WriteLine($"  free space  : {(facts.DefaultTablespaceFreeMb is { } mb ? mb + " MB" : "unknown")}");
         Console.WriteLine($"  tables      : {(facts.ExistingCrm04Tables.Count == 0 ? "(none)" : string.Join(", ", facts.ExistingCrm04Tables))}");
@@ -150,13 +150,11 @@ public static class Program
             return 1;
         }
 
-        if (!facts.HasPartitioning)
-        {
-            Console.WriteLine(
-                "  NOTE: v$option does not report Partitioning. If it is genuinely unlicensed, the\n" +
-                "        INTERVAL clauses in 01_tables.sql will fail and retention must fall back to\n" +
-                "        a chunked DELETE. If v$option is simply not readable by this schema, ignore this.\n");
-        }
+        // There was a NOTE here about Partitioning that ended with the words "ignore this".
+        // It was printed on the plant server, it was ignored exactly as instructed, and
+        // --apply-ddl then failed with ORA-00439 and left the schema half-built. A check that
+        // cannot distinguish "unlicensed" from "no privilege to ask" has no business issuing a
+        // warning, so it no longer does - and the schema no longer needs the option either.
 
         Console.WriteLine("  database check passed.\n");
         return 0;

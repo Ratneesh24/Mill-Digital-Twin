@@ -168,10 +168,13 @@ public sealed class FeederService : BackgroundService
 /// Housekeeping: trend rollup and retention. Both are WRITES, which is why they live in the
 /// Feeder rather than the API.
 ///
-/// Deliberately on a slow timer and off the frame path. Neither is urgent — a trend bucket that
-/// appears five seconds late is invisible, and retention only has to keep up with a table
-/// growing at 155 MB an hour — and putting them on the 10 Hz loop would risk a partition drop
-/// landing between a frame's header and its samples.
+/// Deliberately on a slow timer and off the frame path. A trend bucket that appears five seconds
+/// late is invisible, and putting a bulk DELETE on the 10 Hz loop would put it between a frame's
+/// header and its samples.
+///
+/// Retention is no longer free, though. Without the Partitioning option it is a chunked DELETE
+/// that has to clear roughly 65,000 TAG_SAMPLE rows a minute just to stand still, so this loop
+/// reports what it actually removed and complains when a pass does not reach the cutoff.
 /// </summary>
 public sealed class MaintenanceService : BackgroundService
 {
@@ -219,11 +222,23 @@ public sealed class MaintenanceService : BackgroundService
             try
             {
                 var result = await _retention.ApplyAsync(_retentionWindow, ct);
-                if (result.FramePartitionsDropped + result.SamplePartitionsDropped > 0)
+                if (result.FrameRowsDeleted + result.SampleRowsDeleted > 0)
                 {
                     _log.LogInformation(
-                        "Retention dropped {Frames} FRAME and {Samples} TAG_SAMPLE partition(s) below frame {Cutoff}.",
-                        result.FramePartitionsDropped, result.SamplePartitionsDropped, result.CutoffFrameId);
+                        "Retention deleted {Samples} TAG_SAMPLE and {Frames} FRAME row(s) at or below frame {Cutoff}.",
+                        result.SampleRowsDeleted, result.FrameRowsDeleted, result.CutoffFrameId);
+                }
+
+                // The failure this design can have and the partitioned one could not: falling
+                // behind the writer. Silence here would mean the tablespace filling with nothing
+                // in the log to explain it, so say so every single pass that falls short.
+                if (!result.ReachedCutoff)
+                {
+                    _log.LogWarning(
+                        "Retention did not reach frame {Cutoff} within its {Budget}s budget — rows older " +
+                        "than the retention window remain and TAG_SAMPLE is growing. If this repeats, the " +
+                        "database is not keeping up with the feed; lower Retention:Hours.",
+                        result.CutoffFrameId, 30);
                 }
 
                 await _retention.TrimTrendsAsync(ct);

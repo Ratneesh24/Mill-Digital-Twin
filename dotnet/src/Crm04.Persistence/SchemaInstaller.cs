@@ -8,8 +8,8 @@ public sealed record SchemaScriptResult(string Script, int StatementsRun, IReadO
 /// Runs the DDL scripts in <c>db/ddl</c>.
 ///
 /// WHY NOT EF CORE MIGRATIONS FOR THIS. The schema's whole performance story lives in clauses EF
-/// Core's Oracle provider will not emit: ORGANIZATION INDEX, INTERVAL partitioning, sequence
-/// CACHE. Expressing them would mean wrapping raw SQL in <c>migrationBuilder.Sql(...)</c> and
+/// Core's Oracle provider will not emit: ORGANIZATION INDEX and sequence CACHE. Expressing them
+/// would mean wrapping raw SQL in <c>migrationBuilder.Sql(...)</c> and
 /// then maintaining a second copy in <c>db/ddl</c> for the DBAs who will actually review this on
 /// a plant database. One authored artefact, run by both, is the honest arrangement — and a plant
 /// DBA can read the .sql files without a .NET toolchain.

@@ -58,7 +58,7 @@ THEN CONTINUE WITH THE ORIGINAL COMMANDS
     dotnet run --project src/Crm04.Feeder -- --apply-ddl
 
 --check-db is READ-ONLY. It reports the Oracle banner, the CRM04 schema, granted
-privileges, whether the Partitioning option is licensed, and tablespace free space.
+privileges, and tablespace free space. The schema needs no licensed Oracle options.
 It exits non-zero and names whatever is missing. Fix that before --apply-ddl.
 
 

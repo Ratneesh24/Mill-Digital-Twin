@@ -5,12 +5,15 @@ using Shouldly;
 namespace Crm04.Persistence.Tests;
 
 /// <summary>
-/// The statement splitter and the partition-bound parser, tested without a database.
+/// The statement splitter, and the guards that keep the DDL runnable on the plant database,
+/// tested without a database.
 ///
-/// Both are small, both are easy to get subtly wrong, and both fail in ways that are expensive
-/// to debug against a live Oracle: a mis-split script half-creates a schema, and a mis-parsed
-/// high value drops the wrong partition. Testing them here means the first run against a real
-/// database is exercising Oracle, not this code.
+/// Both failure modes are expensive to debug against a live Oracle. A mis-split script
+/// half-creates a schema. So does a clause the database refuses: this schema shipped with
+/// INTERVAL partitioning, and the way we found out mill4db has no Partitioning option was
+/// ORA-00439 from --apply-ddl on the plant server, mid-install, with an operator watching.
+/// The negative assertions below exist so that class of mistake fails here instead — in a
+/// second, on the machine where it was made.
 /// </summary>
 public class SchemaInstallerTests
 {
@@ -110,30 +113,46 @@ public class SchemaInstallerTests
     }
 
     [Fact]
-    public void TheHotTablesAreIndexOrganisedAndPartitioned()
+    public void TheHotTableIsIndexOrganisedAndTheSchemaNeedsNoOracleOptions()
     {
         var ddl = DdlDirectory();
         if (ddl is null) return;
 
         var sql = File.ReadAllText(Path.Combine(ddl, "01_tables.sql"));
 
-        // The performance story in three clauses. If any of them is lost in an edit, the schema
-        // still works and quietly becomes an order of magnitude slower, which is the kind of
-        // regression nobody notices until the tablespace fills.
+        // The performance story. If this is lost in an edit the schema still works and quietly
+        // becomes an order of magnitude slower, which is the kind of regression nobody notices
+        // until the tablespace fills.
         sql.ShouldContain("ORGANIZATION INDEX");
-        sql.ShouldContain("INTERVAL (36000)");
-        sql.ShouldContain("PARTITION BY RANGE (FRAME_ID)");
 
         // BINARY_DOUBLE, not NUMBER: IEEE-754 so a value is bit-identical to the C# double and
         // the JavaScript number it came from.
         sql.ShouldContain("NUM_VALUE  BINARY_DOUBLE");
         sql.ShouldNotContain("NUM_VALUE  NUMBER");
 
-        // Both tables partitioned on the same key with the same boundaries, which is what lets
-        // retention drop from both with one cutoff.
-        System.Text.RegularExpressions.Regex
-            .Matches(sql, @"PARTITION BY RANGE \(FRAME_ID\)")
-            .Count.ShouldBe(2);
+        // THE PRODUCTION DATABASE HAS NO PARTITIONING OPTION.
+        //
+        // This is not a style rule. The schema shipped with INTERVAL partitioning, and the way
+        // we found out was ORA-00439 from --apply-ddl on the plant server, with the schema left
+        // half-built. Anyone reintroducing it should be stopped by a red test on their own
+        // machine, seconds after the edit, not by an operator in a control room.
+        sql.ShouldNotContain("PARTITION BY");
+        sql.ShouldNotContain("INTERVAL (");
+    }
+
+    [Fact]
+    public void NoIndexIsDeclaredLocal()
+    {
+        var ddl = DdlDirectory();
+        if (ddl is null) return;
+
+        // The second landmine, and the one nobody saw: --apply-ddl stops on the first error, so
+        // ORA-00439 on CREATE TABLE FRAME hid an ORA-14016 waiting in 02_indexes.sql. A LOCAL
+        // index requires a partitioned table. Removing the INTERVAL clauses alone would have
+        // moved the failure, not fixed it.
+        var indexes = SchemaInstaller.Split(File.ReadAllText(Path.Combine(ddl, "02_indexes.sql")));
+
+        indexes.ShouldAllBe(s => !s.TrimEnd().EndsWith("LOCAL", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string? DdlDirectory()
@@ -147,34 +166,8 @@ public class SchemaInstallerTests
     }
 }
 
-public class RetentionBoundTests
-{
-    [Theory]
-    [InlineData("36000", 36000L)]
-    [InlineData("72000", 72000L)]
-    [InlineData(" 108000 ", 108000L)]
-    // 21c reports the bound as JSON; older releases as a bare number. Both must parse.
-    [InlineData("{\"high_value\":36000}", 36000L)]
-    public void ParsesAPartitionHighValue(string highValue, long expected)
-    {
-        RetentionService.TryParseHighValue(highValue, out var bound).ShouldBeTrue();
-        bound.ShouldBe(expected);
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData("MAXVALUE")]
-    [InlineData("TO_DATE(' 2026-01-01', 'SYYYY-MM-DD')")]
-    public void RefusesToParseABoundItDoesNotUnderstand(string? highValue)
-    {
-        // Refusing is the SAFE direction: an unparsed bound means the partition is left alone.
-        // Guessing wrong here drops live data.
-        var parsed = RetentionService.TryParseHighValue(highValue, out _);
-
-        // A date bound contains digits, so it may parse — what must never happen is a silent
-        // wrong answer for the empty cases.
-        if (string.IsNullOrWhiteSpace(highValue) || highValue == "MAXVALUE") parsed.ShouldBeFalse();
-    }
-}
+// RetentionBoundTests lived here and covered RetentionService.TryParseHighValue, which parsed an
+// interval partition's high-value bound. Both are gone: with no partitions there are no bounds to
+// parse. Retention is now a chunked DELETE whose behaviour needs a live Oracle to verify, so it is
+// deliberately NOT faked here — see docs/IT_INTEGRATION_GUIDE.md §3.4 for the check that matters
+// (MIN(FRAME_ID) must advance).

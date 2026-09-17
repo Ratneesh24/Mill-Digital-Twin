@@ -6,16 +6,17 @@
 -- second full-size structure to maintain at 1,080 rows/second. Every access path those tables
 -- need is already the PK.
 --
--- LOCAL, not global, on the partitioned table. A global index would have to be maintained (or
--- rebuilt) every time retention drops a partition, which would turn an instant metadata
--- operation into an index rebuild. LOCAL indexes drop with their partition.
+-- NO LOCAL INDEXES, deliberately. This database does not have the Partitioning option, so FRAME
+-- and TAG_SAMPLE are ordinary segments and `LOCAL` would raise ORA-14016 — the underlying table
+-- of a local partitioned index must itself be partitioned. Retention is a chunked DELETE, so
+-- these indexes are maintained row by row like any other.
 -- =====================================================================
 
 
 -- The poller reads FRAME by FRAME_ID > watermark, which the primary key already serves.
 -- This one covers the other question anyone asks of FRAME: "what was happening at time T?" —
 -- retention's cutoff lookup, and any analyst query.
-CREATE INDEX IX_FRAME_EPOCH ON FRAME (EPOCH_MS) LOCAL;
+CREATE INDEX IX_FRAME_EPOCH ON FRAME (EPOCH_MS);
 
 
 -- The alarm panel asks two questions, and each gets an index.
