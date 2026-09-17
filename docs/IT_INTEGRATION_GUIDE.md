@@ -550,7 +550,7 @@ Run each as a Windows service (`sc create`, NSSM, or IIS for Api/Web). Copy
 | Feeder: `Source:Kind … refused in the 'Production' environment` | `Source:Kind` is `Replay`. Must be `OpcUa`. |
 | API: `TAG_DEF is empty` | `--apply-ddl` not run against this database. |
 | Feeder: `MISSING PRIVILEGES` | DBA grants from §3.1. |
-| DDL fails with **ORA-00439** (Partitioning) or **ORA-14016** (LOCAL index) | An outdated copy of `db/ddl/`. The shipped schema uses neither. Re-pull the code, then `--drop-all --yes` and `--apply-ddl` again — the failed run leaves the schema half-built. |
+| DDL fails with **ORA-00439** (Partitioning) or **ORA-14016** (LOCAL index) | An outdated copy of `db/ddl/`. The shipped schema uses neither — get the current code and re-run `--apply-ddl`. The failed run leaves the schema half-built, but that is safe: objects that already exist report ORA-00955 and are skipped, so the re-run completes the remainder. **`--drop-all` is not needed** for this. |
 | Feeder: `Retention did not reach frame …` | Retention is losing the race against the feed and `TAG_SAMPLE` is growing. Lower `Retention:Hours`, or investigate database write performance. Do not ignore it — the tablespace will fill. |
 | Feeder: `BadCertificateUntrusted` / `BadSecurityChecksFailed` | Trust the Feeder in Kepware (§4.3), and put Kepware's server cert in `pki/trusted`. |
 | Many readouts **NO TAG** | Wrong `NodeIdPrefix` or `ns=` index (§4.4), or rows with an empty `TwinTag`. |
