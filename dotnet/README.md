@@ -11,7 +11,7 @@ The React app in `../src` stays as the reference implementation and is untouched
 | **M1** Domain port + parity gate | **done** |
 | **M3** API + hubs + pipeline | **done** |
 | **M2** Schema, persistence, Feeder | **written, never run** — no Oracle instance reachable yet, see below |
-| **M4a** Blazor shell + ValueReadout + Dashboard | **done** — Tailwind design system wired (`App.razor` → `wwwroot/css/app.css`, built from `Styles/app.css` on every build) |
+| **M4a** Blazor shell + ValueReadout + Dashboard | **done** — Tailwind design system wired (`App.razor` → `wwwroot/css/app.css`, compiled from `Styles/app.css` and committed) |
 | **M5** Trends | **done** — `dashboard-trendspage` layout, browser + legend + CSV, same 8-pen cap; smooth time-based curves, time axis, hover cursor + tooltip (JS-only, no re-render) |
 | **M6–M7** 3D twin | **done** — mill line, live binding, labels, camera presets; dock is SimulationControls (feed-status variant, commands disabled with reason) + full InterlockStatus + Alarms; overlay strip (status, commands, presets, zoom, labels/force, expand, trends) + equipment inspector. Verified in headless Chrome: zero console errors, WS connected, labels track live values, single WebGL context, context-loss auto-recovery |
 | M8 Remaining panels | **done** — CoilDetails, EventTimeline, TagInventory, PlantConfig, FeedDiagnostics + DataIntegrity behind the MODEL / DATA dialog |
@@ -72,11 +72,24 @@ dotnet build
 dotnet test
 ```
 
-**No internet on the build machine?** Every one of these commands restores from nuget.org first
-and dies with `NU1301` if it cannot. See `offline/READ-ME-FIRST.txt`: drop the supplied
-`*.nupkg` files in `dotnet/offline-packages/` and `offline/nuget.config` in `dotnet/`, and the
-restore resolves locally. Node is not required either — `wwwroot/css/app.css` is committed and
-the Tailwind step is `ContinueOnError` (`-p:SkipClientAssets=true` skips it outright).
+**No internet on the build machine? It already works.** All 160 packages are committed in
+`offline-packages/`, and `nuget.config` resolves restores from there with nuget.org cleared — so
+a fresh clone builds air-gapped with no setup at all.
+
+The corollary, and it bites: **adding a new `PackageReference` fails with `NU1101` for everyone,
+including online, until `offline-packages/` is refreshed in the same commit.**
+`offline-packages/READ-ME-FIRST.txt` has the refresh procedure and the escape hatch.
+
+Node is not required either — the compiled `wwwroot/css/app.css` is committed, and the Tailwind
+step is `ContinueOnError` (`-p:SkipClientAssets=true` skips it outright). That is now *enforced*:
+`Crm04.Web.csproj` fails the build if the stylesheet is missing, because it was once gitignored
+while the csproj claimed otherwise, and a ZIP reached the plant server with no CSS at all.
+
+**A second staleness rule, the same shape as the NuGet one:** the stylesheet is a committed build
+artifact, so changing `Styles/app.css` — or using a Tailwind class no other component used —
+means running `npm run build:css` and committing the result **in the same commit**. Skip it and
+the plant server gets a stylesheet missing that one class, which looks *almost* right and is
+harder to spot than no styling at all.
 
 `TreatWarningsAsErrors` is on solution-wide. The TypeScript app ships with zero errors under
 `strict` and treats that as a release gate; the C# side keeps the same bar, and nullable reference

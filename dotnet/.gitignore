@@ -8,9 +8,21 @@ artifacts/
 *.suo
 .vs/
 
-## Generated client assets (rebuilt by the MSBuild ClientApp target)
+## Generated client assets.
+##
+## NOTE what is NOT here: src/Crm04.Web/wwwroot/css/app.css. It is generated, and it is
+## COMMITTED anyway, because the plant server has neither Node nor internet and can never
+## rebuild it. It WAS ignored, while Crm04.Web.csproj claimed the opposite - so a ZIP of this
+## repo reached production with no stylesheet at all, npm was absent, and the dashboard
+## rendered completely unstyled behind nothing but an MSB3073 warning.
+##
+## Crm04.Web.csproj now fails the build if that file is missing. Rebuild it
+## (cd src/Crm04.Web/ClientApp && npm run build:css) in the SAME commit as any change to
+## Styles/app.css or to a .razor file that uses a new Tailwind class.
 src/Crm04.Web/ClientApp/node_modules/
-src/Crm04.Web/wwwroot/css/app.css
+
+## Nothing produces or references these bundles any more - kept only so a stray local file
+## from an older build is not accidentally committed.
 src/Crm04.Web/wwwroot/js/twin.bundle.js
 src/Crm04.Web/wwwroot/js/twin.bundle.js.map
 src/Crm04.Web/wwwroot/js/charts.bundle.js

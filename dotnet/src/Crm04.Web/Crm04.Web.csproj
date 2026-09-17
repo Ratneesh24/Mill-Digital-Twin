@@ -36,7 +36,8 @@
     otherwise get nothing, silently, with no error anywhere.
 
     SkipClientAssets=true for a build agent with no Node - wwwroot/css/app.css is committed, so a
-    node-less CI still produces a correct binary.
+    node-less CI still produces a correct binary. That claim is enforced by VerifyClientCssExists
+    below; it used to be merely asserted here, and it was false.
   -->
   <Target Name="BuildClientCss" BeforeTargets="BeforeBuild" Condition="'$(SkipClientAssets)' != 'true'">
     <Exec Command="npm install --no-audit --no-fund"
@@ -46,6 +47,25 @@
     <Exec Command="npm run build:css"
           WorkingDirectory="ClientApp"
           ContinueOnError="true" />
+  </Target>
+
+  <!--
+    A MISSING STYLESHEET IS A BUILD ERROR, not a warning.
+
+    Both Execs above are ContinueOnError, deliberately: a machine without Node must still build.
+    The price is that on such a machine they emit MSB3073 warnings and the build carries on - so
+    if wwwroot/css/app.css is not present, nothing stops a publish that is missing every style
+    the application has. That is not hypothetical. It shipped: the file was gitignored, a ZIP of
+    the repo reached the plant server, npm was not installed, and the control-room dashboard came
+    up with a 404 on css/app.css and no styling whatsoever.
+
+    Hooked to CoreBuild rather than AfterTargets="BuildClientCss" on purpose: SkipClientAssets=true
+    skips that target outright, and that is exactly the configuration the plant server builds with,
+    so a guard attached to it would be silent in the one case that matters.
+  -->
+  <Target Name="VerifyClientCssExists" BeforeTargets="CoreBuild">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)/wwwroot/css/app.css')"
+           Text="wwwroot/css/app.css is missing. App.razor loads it, so the application would render COMPLETELY UNSTYLED with a 404 for css/app.css. This file is committed to the repository - restore it with 'git checkout -- wwwroot/css/app.css'. To regenerate it you need Node: 'npm run build:css' in the ClientApp folder." />
   </Target>
 
   <ItemGroup>

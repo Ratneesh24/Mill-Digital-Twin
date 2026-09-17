@@ -128,22 +128,19 @@ User Id=CRM04;Password=CRM04@123;Data Source=132.147.244.24:1521/mill4db;
 
 ### 3.4 Check, then create the schema
 
-> ⚠ **Offline server? Do this first.** `dotnet run` restores NuGet packages before it runs
-> anything, so on a machine with no internet the commands below fail with
-> `error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json`.
-> That is NuGet, not Oracle — the build never reaches the database.
+> ℹ **Offline server: there is nothing to set up.** `dotnet run` restores NuGet packages before
+> it runs anything, so on a machine with no internet this would normally fail with
+> `error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json`
+> — that is NuGet, not Oracle, and the build never reaches the database.
 >
-> Fix it once with the **`CRM04-offline-packages`** folder supplied with the code (160
-> packages, ~135 MB — direct *and* transitive):
+> **It is already solved inside the repo.** All 160 packages (direct *and* transitive) are
+> committed in `dotnet/offline-packages/`, and `dotnet/nuget.config` points the restore at that
+> folder with nuget.org cleared. Download the ZIP or clone, and `dotnet restore` succeeds with
+> no internet and no copy steps — `build`, `test` and `publish` too.
 >
-> 1. Copy its `*.nupkg` files (flat) to `dotnet\offline-packages\`.
-> 2. Copy its `nuget.config` to `dotnet\`, next to `Crm04.sln`.
-> 3. `cd dotnet && dotnet restore` → `Restored …` for all 10 projects, no NU1301.
->
-> That config clears nuget.org, so nothing is fetched from the internet again, and it
-> covers `build`, `test` and `publish` too. Only the **.NET 8 SDK** is needed; Node/npm is
-> not — the Tailwind step is `ContinueOnError` and `wwwroot/css/app.css` is committed
-> (`-p:SkipClientAssets=true` skips it cleanly). See `READ-ME-FIRST.txt` in that folder.
+> The only prerequisite is the **.NET 8 SDK**. Node/npm is not needed: the Tailwind step is
+> `ContinueOnError` and `wwwroot/css/app.css` is committed (`-p:SkipClientAssets=true` skips it
+> cleanly). See `dotnet/offline-packages/READ-ME-FIRST.txt`.
 
 ```bash
 cd dotnet
@@ -495,9 +492,9 @@ screen. A missing or misspelled `Source:Kind` also refuses to start.
 Requires the **.NET 8** runtime (ASP.NET Core Hosting Bundle on Windows), and the **.NET 8
 SDK** on whichever machine runs `dotnet publish`.
 
-> **On an offline server, complete the `offline-packages` setup in §3.4 first** — `publish`
-> restores exactly like `run` does and fails the same way without it. The alternative is to
-> publish on a connected PC and copy the output folders across; the server then needs only
+> `publish` restores exactly like `run` does, and is covered by the committed
+> `dotnet/offline-packages/` in the same way (§3.4) — no internet required. The alternative is
+> to publish on a connected PC and copy the output folders across; the server then needs only
 > the Hosting Bundle, not the SDK.
 
 ```bash

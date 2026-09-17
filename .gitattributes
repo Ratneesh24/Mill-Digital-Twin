@@ -1,0 +1,8 @@
+# core.autocrlf is on for this repo, and dotnet/offline-packages/ holds 160 .nupkg files -
+# ZIP archives that a machine with no internet depends on being byte-perfect. Git's own
+# binary detection would almost certainly leave them alone; "almost certainly" is the wrong
+# standard when the failure surfaces as an unreadable package on an air-gapped plant server
+# that cannot download a replacement. Say it explicitly instead.
+#
+# `binary` is shorthand for `-text -diff`: never EOL-converted, never treated as text.
+*.nupkg binary

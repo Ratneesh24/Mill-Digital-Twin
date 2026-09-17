@@ -8,11 +8,12 @@ node_modules/.tmp
 *.log
 .claude/
 
-# Offline NuGet install on an air-gapped server (see dotnet/offline/READ-ME-FIRST.txt).
-# The instructions are committed; the 135 MB of packages and the extracted cache are not.
-dotnet/offline-packages/
+# Offline NuGet install (see dotnet/offline-packages/READ-ME-FIRST.txt).
+#
+# The 160 .nupkg files AND dotnet/nuget.config are COMMITTED, deliberately, so that a clone or
+# a GitHub ZIP download builds on an air-gapped machine with no setup whatsoever. An earlier
+# version of this file ignored both; that was correct only while the packages lived outside
+# the repo.
+#
+# Only the extracted cache is ignored - NuGet regenerates it from the .nupkg on every restore.
 dotnet/packages-cache/
-# Activating the offline feed means copying dotnet/offline/nuget.config up to dotnet/.
-# That copy is machine-local: committing it would point every other clone at a folder
-# that is not in the repo, turning their restore into NU1101.
-dotnet/nuget.config

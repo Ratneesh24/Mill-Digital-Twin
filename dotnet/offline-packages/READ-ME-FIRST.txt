@@ -1,0 +1,106 @@
+CRM04 DIGITAL TWIN - OFFLINE NUGET PACKAGES
+===========================================
+
+THERE IS NOTHING TO INSTALL
+---------------------------
+These 160 .nupkg files are committed to the repository, and ..\nuget.config (next to
+Crm04.sln) already points the restore at them with nuget.org cleared.
+
+So on a machine with no internet, you just build:
+
+    cd <wherever you unzipped>\dotnet
+    dotnet restore
+    dotnet run --project src/Crm04.Feeder -- --check-db
+    dotnet run --project src/Crm04.Feeder -- --apply-ddl
+
+No copying, no configuration, no network. Earlier versions of this file asked you to copy
+the packages and the config into place by hand; that is done, and those steps are gone.
+
+
+WHAT PROBLEM THIS SOLVES
+------------------------
+On the plant server the first attempt was:
+
+    dotnet run --project src/Crm04.Feeder -- --check-db
+
+    error NU1301: Unable to load the service index for source
+                  https://api.nuget.org/v3/index.json
+
+That was never a database or a code problem. Every .NET build RESTORES its NuGet
+dependencies before it compiles anything, and JLD2SRV19913 cannot reach nuget.org, so the
+build failed long before it tried to contact Oracle.
+
+This folder holds every package the solution needs - the direct ones and, just as
+importantly, all their transitive dependencies. A single missing transitive package is
+enough to fail a restore, and an air-gapped machine cannot download the one it is missing.
+
+
+THE ONE RULE FOR DEVELOPERS
+---------------------------
+Because nuget.config does <clear />, nuget.org is off for this repository. That is what
+makes offline builds work, and it has a price:
+
+    ADDING A NEW PackageReference WILL FAIL WITH NU1101 - FOR EVERYONE, INCLUDING ON A
+    MACHINE WITH PERFECTLY GOOD INTERNET - UNTIL THIS FOLDER IS REFRESHED.
+
+Refresh it in the SAME commit that changes Directory.Packages.props. If you do not, the
+build still works on your machine (your cache already has the package) and breaks on the
+plant server, where nobody can fix it.
+
+Escape hatch for a one-off restore against the real nuget.org:
+
+    dotnet restore --configfile <path to a config that has nuget.org>
+
+or temporarily rename dotnet\nuget.config.
+
+
+THE SAME RULE APPLIES TO THE STYLESHEET
+---------------------------------------
+src/Crm04.Web/wwwroot/css/app.css is compiled Tailwind output, and it is committed for the
+same reason these packages are: the plant server has no Node and no internet, so it can
+never rebuild it.
+
+    CHANGING Styles/app.css, OR USING A TAILWIND CLASS NO OTHER COMPONENT USED, MEANS
+    RUNNING `npm run build:css` AND COMMITTING THE RESULT IN THE SAME COMMIT.
+
+Skip it and the server gets a stylesheet missing exactly that class - which renders almost
+correctly, and is harder to notice than no styling at all.
+
+This was not hypothetical either: the file used to be gitignored while the build claimed it
+was committed, so a ZIP reached the plant server with no stylesheet, npm was absent, and the
+dashboard came up completely unstyled. Crm04.Web.csproj now fails the build if it is
+missing, which is why you can rely on it being there.
+
+
+HOW TO REFRESH THIS FOLDER (on a PC with internet)
+--------------------------------------------------
+    dotnet restore dotnet\Crm04.sln --packages C:\pk
+    Get-ChildItem C:\pk -Recurse -Filter *.nupkg |
+        ForEach-Object { Copy-Item $_.FullName -Destination <this folder> -Force }
+
+USE A SHORT PATH LIKE C:\pk. This is not a style preference. Under a long path the OPC UA
+package names exceed the Windows 260-character limit, Copy-Item fails on exactly those
+files, and you end up with a folder that looks complete and is not - including
+opc.ua.configuration, which the Feeder cannot start without. It happened once already.
+
+Afterwards, verify honestly: clone the repo somewhere clean, run `dotnet restore` there,
+and confirm 10/10 projects restore with no NU1301 and no NU1101.
+
+
+NOTES
+-----
+* .NET 8 SDK is required to build. Nothing else needs installing.
+
+* Node.js / npm is NOT required. The Tailwind CSS step is marked ContinueOnError and the
+  compiled wwwroot/css/app.css is committed, so a Node-less machine still produces a
+  correct binary. To skip that step outright, add:
+      -p:SkipClientAssets=true
+
+* Do not delete this folder. NuGet re-reads it on every restore, including after a clean.
+
+* Path-independent: nuget.config resolves "offline-packages" relative to its own location,
+  so the repo works from any drive or directory.
+
+* --check-db is READ-ONLY. It reports the Oracle banner, the CRM04 schema, granted
+  privileges and tablespace free space, exits non-zero and names whatever is missing. The
+  schema needs no licensed Oracle options - no Partitioning, no LOCAL indexes.
